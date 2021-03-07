@@ -841,14 +841,14 @@ do
         local currentOwner = object:GetOwner()
         if not currentOwner then
             object:SetOwner(owner, anchor, offsetX, offsetY)
-            return true
+            return true, false
         end
         offsetX, offsetY = offsetX or 0, offsetY or 0
         local currentAnchor, currentOffsetX, currentOffsetY = object:GetAnchorType()
         currentOffsetX, currentOffsetY = currentOffsetX or 0, currentOffsetY or 0
         if currentAnchor ~= anchor or (currentOffsetX ~= offsetX and abs(currentOffsetX - offsetX) > 0.01) or (currentOffsetY ~= offsetY and abs(currentOffsetY - offsetY) > 0.01) then
             object:SetOwner(owner, anchor, offsetX, offsetY)
-            return true
+            return true, true
         end
         return false, true
     end
@@ -3777,7 +3777,7 @@ do
         if render:ShowProfile(GameTooltip, fullName, faction, render.Preset.UnitSmartPadding(ownerExisted)) then
             return
         end
-        if ownerSet then
+        if ownerSet and not ownerExisted then
             GameTooltip:Hide()
         end
     end
@@ -3819,7 +3819,7 @@ do
         if render:ShowProfile(GameTooltip, info.fullName, ns.PLAYER_FACTION, render.Preset.UnitSmartPadding(ownerExisted)) then
             return
         end
-        if ownerSet then
+        if ownerSet and not ownerExisted then
             GameTooltip:Hide()
         end
     end
@@ -4608,7 +4608,7 @@ do
         if render:ShowProfile(GameTooltip, fullName, ns.PLAYER_FACTION, render.Preset.Unit(render.Flags.MOD_STICKY), currentResult) then
             return true, fullName
         end
-        if ownerSet then
+        if ownerSet and not ownerExisted then
             GameTooltip:Hide()
         end
         return false
@@ -4690,7 +4690,7 @@ do
         if render:ShowProfile(GameTooltip, fullName, ns.PLAYER_FACTION, render.Preset.UnitSmartPadding(ownerExisted)) then
             return
         end
-        if ownerSet then
+        if ownerSet and not ownerExisted then
             GameTooltip:Hide()
         end
     end
@@ -4773,7 +4773,7 @@ do
         if render:ShowProfile(GameTooltip, nameAndRealm, faction, render.Preset.UnitSmartPadding(ownerExisted)) then
             return
         end
-        if ownerSet then
+        if ownerSet and not ownerExisted then
             GameTooltip:Hide()
         end
     end
@@ -5221,7 +5221,7 @@ do
 
     local function CreateGuildWeeklyFrame()
         ---@type GuildWeeklyFrame
-        local frame = CreateFrame("Frame", nil, ChallengesFrame, BackdropTemplateMixin and "BackdropTemplate")
+        local frame = CreateFrame("Frame", "RaiderIO_GuildWeeklyFrame", ChallengesFrame, BackdropTemplateMixin and "BackdropTemplate")
         frame.maxVisible = 5
         -- inherit from the mixin
         for k, v in pairs(GuildWeeklyFrameMixin) do
