@@ -1,3 +1,4 @@
 --ignore-dir=build
 --ignore-dir=assets
---ignore-dir=db
+--ignore-file=match:/db_.*_characters\.lua/
+--ignore-file=match:/db_.*_lookup\.lua/
