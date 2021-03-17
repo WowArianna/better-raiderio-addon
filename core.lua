@@ -2275,16 +2275,18 @@ do
         local maxDungeonIndex = 0
         local maxDungeonTime = 999
         local maxDungeonLevel = 0
+        local maxDungeonScore = 0
         local maxDungeonUpgrades = 0
         for i = 1, #keystoneData.all.runs do
             local run = keystoneData.all.runs[i]
             results.dungeons[i] = run.level
             results.dungeonUpgrades[i] = run.upgrades
             results.dungeonTimes[i] = run.fraction
-            if run.level > maxDungeonLevel or (run.level == maxDungeonLevel and run.fraction < maxDungeonTime) then
+            if run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime) then
                 maxDungeonIndex = i
                 maxDungeonTime = run.fraction
                 maxDungeonLevel = run.level
+                maxDungeonScore = run.score
                 maxDungeonUpgrades = run.upgrades
             end
         end
