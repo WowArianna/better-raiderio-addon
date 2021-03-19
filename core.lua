@@ -1978,17 +1978,16 @@ do
     end
 
     local function BinarySearchGetIndexFromName(data, name, startIndex, endIndex)
-        local lcname = name:lower()
         local minIndex = startIndex
         local maxIndex = endIndex
         local mid, current
 
         while minIndex <= maxIndex do
             mid = floor((maxIndex + minIndex) / 2)
-            current = data[mid]:lower()
-            if current == lcname then
+            current = data[mid]
+            if current == name then
                 return mid
-            elseif current < lcname then
+            elseif current < name then
                 minIndex = mid + 1
             else
                 maxIndex = mid - 1
