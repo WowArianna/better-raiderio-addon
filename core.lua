@@ -3942,11 +3942,12 @@ do
 end
 
 -- fanfare.lua
--- dependencies: module, config, util, provider
+-- dependencies: module, callback, config, util, provider
 do
 
     ---@class FanfareModule : Module
     local fanfare = ns:NewModule("Fanfare") ---@type FanfareModule
+    local callback = ns:GetModule("Callback") ---@type CallbackModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
     local provider = ns:GetModule("Provider") ---@type ProviderModule
@@ -4334,6 +4335,15 @@ do
         end
     end
 
+    local function CheckChallengeFrame()
+        local frame = _G.ChallengeModeCompleteBanner
+        if not frame then
+            return
+        end
+        callback:UnregisterEvent(CheckChallengeFrame, "ADDON_LOADED")
+        hooksecurefunc(frame, "PlayBanner", OnChallengeModeCompleteBannerPlay)
+    end
+
     local function CheckCachedData()
         local cachedRuns = _G.RaiderIO_CachedRuns
         if not cachedRuns then
@@ -4358,19 +4368,23 @@ do
     end
 
     function fanfare:CanLoad()
-        return config:IsEnabled() and _G.ChallengeModeCompleteBanner and config:Get("debugMode") -- TODO: do not load this module by default (it's not yet tested well enough) but we do load it if debug mode is enabled
+        return config:IsEnabled() and config:Get("debugMode") -- TODO: do not load this module by default (it's not yet tested well enough) but we do load it if debug mode is enabled
     end
 
     function fanfare:OnLoad()
         self:Enable()
         KEYSTONE_DATE = provider:GetProvidersDates()
         CheckCachedData()
-        hooksecurefunc(_G.ChallengeModeCompleteBanner, "PlayBanner", OnChallengeModeCompleteBannerPlay)
+        if _G.ChallengeModeCompleteBanner then
+            CheckChallengeFrame()
+        else
+            callback:RegisterEvent(CheckChallengeFrame, "ADDON_LOADED")
+        end
     end
 
-    -- DEBUG: force show the end screen for UR+15 (1950 is the timer)
+    -- DEBUG: force show the end screen for MIST+15 (1800/1440/1080 is the timer)
     -- /run wipe(RaiderIO_CachedRuns)
-    -- /run C_ChallengeMode.GetCompletionInfo=function()return 251, 15, 1950, true, 1, false end
+    -- /run C_ChallengeMode.GetCompletionInfo=function()return 375, 15, 1800, true, 1, false end
     -- /run for _,f in ipairs({GetFramesRegisteredForEvent("CHALLENGE_MODE_COMPLETED")})do f:GetScript("OnEvent")(f,"CHALLENGE_MODE_COMPLETED")end
 
 end
