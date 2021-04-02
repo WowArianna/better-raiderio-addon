@@ -3942,12 +3942,11 @@ do
 end
 
 -- fanfare.lua
--- dependencies: module, callback, config, util, provider
+-- dependencies: module, config, util, provider
 do
 
     ---@class FanfareModule : Module
     local fanfare = ns:NewModule("Fanfare") ---@type FanfareModule
-    local callback = ns:GetModule("Callback") ---@type CallbackModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
     local provider = ns:GetModule("Provider") ---@type ProviderModule
@@ -4335,13 +4334,23 @@ do
         end
     end
 
-    local function CheckChallengeFrame()
-        local frame = _G.ChallengeModeCompleteBanner
-        if not frame then
+    local hooked
+
+    local function TopBannerManager_Show(self)
+        if hooked then
             return
         end
-        callback:UnregisterEvent(CheckChallengeFrame, "ADDON_LOADED")
+        local frame = _G.ChallengeModeCompleteBanner
+        if not frame or frame ~= self then
+            return
+        end
+        hooked = true
         hooksecurefunc(frame, "PlayBanner", OnChallengeModeCompleteBannerPlay)
+        local mapID, level, time, onTime, keystoneUpgradeLevels, practiceRun = C_ChallengeMode.GetCompletionInfo()
+        if not practiceRun then
+            local bannerData = { mapID = mapID, level = level, time = time, onTime = onTime, keystoneUpgradeLevels = keystoneUpgradeLevels } ---@type ChallengeModeCompleteBannerData
+            OnChallengeModeCompleteBannerPlay(frame, bannerData)
+        end
     end
 
     local function CheckCachedData()
@@ -4375,11 +4384,7 @@ do
         self:Enable()
         KEYSTONE_DATE = provider:GetProvidersDates()
         CheckCachedData()
-        if _G.ChallengeModeCompleteBanner then
-            CheckChallengeFrame()
-        else
-            callback:RegisterEvent(CheckChallengeFrame, "ADDON_LOADED")
-        end
+        hooksecurefunc("TopBannerManager_Show", TopBannerManager_Show)
     end
 
     -- DEBUG: force show the end screen for MIST+15 (1800/1440/1080 is the timer)
