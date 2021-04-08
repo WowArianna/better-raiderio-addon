@@ -1978,18 +1978,16 @@ do
     end
 
     local function BinarySearchGetIndexFromName(data, name, startIndex, endIndex)
-        local lcname = name:lower()
         local minIndex = startIndex
         local maxIndex = endIndex
-        local mid, current, lccurrent
+        local mid, current
 
         while minIndex <= maxIndex do
             mid = floor((maxIndex + minIndex) / 2)
             current = data[mid]
-            lccurrent = current:lower()
-            if lccurrent == lcname then
-                return mid, current
-            elseif lccurrent < lcname then
+            if current == name then
+                return mid
+            elseif current < name then
                 minIndex = mid + 1
             else
                 maxIndex = mid - 1
@@ -2015,20 +2013,11 @@ do
     ---@param provider DataProvider
     ---@return table, number, string
     local function SearchForBucketByName(provider, lookup, data, name, realm)
-        local lcrealm = realm:lower()
-        local internalRealm
-        local realmData
-        for rn, rd in pairs(data) do
-            if rn:lower() == lcrealm then
-                internalRealm = rn
-                realmData = rd
-                break
-            end
-        end
+        local realmData = data[realm]
         if not realmData then
             return
         end
-        local nameIndex, internalName = BinarySearchGetIndexFromName(realmData, name, 2, #realmData)
+        local nameIndex = BinarySearchGetIndexFromName(realmData, name, 2, #realmData)
         if not nameIndex then
             return
         end
@@ -2049,7 +2038,7 @@ do
         elseif provider.data == ns.PROVIDER_DATA_TYPE.PvP then
             -- TODO
         end
-        return bucket, baseOffset, guid, internalName, internalRealm
+        return bucket, baseOffset, guid, name, realm
     end
 
     local function ReadBitsFromString(data, offset, length)
