@@ -6659,3 +6659,112 @@ do
     end
 
 end
+
+-- tests.lua
+-- dependencies: module, callback, config, util, provider
+do
+
+    ---@class TestsModule : Module
+    local tests = ns:NewModule("Tests") ---@type TestsModule
+    local callback = ns:GetModule("Callback") ---@type CallbackModule
+    local config = ns:GetModule("Config") ---@type ConfigModule
+    local util = ns:GetModule("Util") ---@type UtilModule
+    local provider = ns:GetModule("Provider") ---@type ProviderModule
+
+    ---@class TestData This can either be a `table` object with the structure as described in the class, or a `function` we call that returns `status` and `explanation` if there is something to report.
+    ---@field public region string @`eu`, `us`, etc.
+    ---@field public faction string @`1` for Alliance, `2` for Horde.
+    ---@field public realm string @The character realm same format as the whisper friendly `GetNormalizedRealmName()` format.
+    ---@field public name string @The character name.
+    ---@field public success boolean @Set `true` if the profile exists and contains data, otherwise `false` to ensure it is empty or missing.
+    ---@field public exists boolean @Set `true` if the test expects the profile to exist, otherwise `false` to ensure it doesn't exist
+    ---@field private profile DataProviderCharacterProfile @Set internally once the test runs and the profile is attempted retrieved.
+    ---@field private status boolean @Set internally to `true` if the test passed, otherwise `false` if something went wrong.
+    ---@field private explanation string @Set internally to describe what went wrong, or what went right depending on the test.
+
+    ---@return boolean @If the GUID strings match (strcmputf8i) we return `true` otherwise `false`, if `nil` it means one GUID is missing from the call.
+    local function CompareProfileGUIDs(guid1, guid2)
+        if type(guid1) ~= "string" or type(guid2) ~= "string" then
+            return
+        end
+        return guid1 == guid2 or strcmputf8i(guid1, guid2) == 0
+    end
+
+    ---@param profile1 DataProviderCharacterProfile
+    ---@param profile2 DataProviderCharacterProfile
+    ---@return boolean @If the profiles reference the same person we return `true` otherwise `false` for different people, `nil` if one profile is missing from the call.
+    local function CompareProfiles(profile1, profile2)
+        if type(profile1) ~= "table" or type(profile2) ~= "table" then
+            return
+        end
+        return profile1 == profile2 or (profile1.mythicKeystoneProfile and profile1.mythicKeystoneProfile == profile2.mythicKeystoneProfile) or (profile1.raidProfile and profile1.raidProfile == profile2.raidProfile) or (profile1.pvpProfile and profile1.pvpProfile == profile2.pvpProfile)
+    end
+
+    ---@type TestData[]
+    local collection = {
+        [1] = { region = "us", faction = 2, realm = "tichondrius", name = "proview", success = true },
+        [2] = { region = "us", faction = 2, realm = "TiChOnDrIuS", name = "pRoViEw", success = true },
+        [3] = function(self)
+            local test1 = self[1] ---@type TestData
+            local test2 = self[2] ---@type TestData
+            if test1.status and test2.status and CompareProfiles(test1.profile, test2.profile) then
+                return nil -- no need to report back about this test
+            elseif not test1.status or not test2.status then
+                return false, "Test#1/#2 failed."
+            elseif not CompareProfiles(test1.profile, test2.profile) then
+                return false, "Test#1/#2 looked up different people."
+            end
+            return false
+        end,
+    }
+
+    function tests:RunTests()
+        ns.Print("|cffFFFFFFRaiderIO|r Running built-in tests:")
+        for id, test in ipairs(collection) do
+            local status, explanation
+            if type(test) == "function" then
+                status, explanation = test(collection)
+            elseif type(test) == "table" then
+                test.profile = provider:GetProfile(test.name, test.realm, test.faction, test.region)
+                if test.profile and not test.profile.success and test.success == true then
+                    test.status = false
+                    test.explanation = "Profile exists, no data, we expected data."
+                elseif test.profile and test.profile.success and test.success == false then
+                    test.status = false
+                    test.explanation = "Profile exists, has data, we expected no data."
+                elseif not test.profile and test.success ~= nil then
+                    test.status = false
+                    test.explanation = "Profile doesn't exist, we expected data."
+                elseif not test.profile and test.exists == true then
+                    test.status = false
+                    test.explanation = "Profile doesn't exist, we expected it to exist."
+                elseif test.profile and test.exists == false then
+                    test.status = false
+                    test.explanation = "Profile exists exist, we expected it not to exist."
+                else
+                    test.status = true
+                end
+                status, explanation = test.status, test.explanation
+            else
+                ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d is not supported, skipping.", id))
+            end
+            if status ~= nil then
+                if explanation then
+                    ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", explanation))
+                else
+                    ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", status and "Passed!" or "Failed!"))
+                end
+            end
+        end
+    end
+
+    function tests:CanLoad()
+        return config:IsEnabled() and config:Get("debugMode") -- TODO: do not load this module by default as we only care if tests pass or fail when in debug mode
+    end
+
+    function tests:OnLoad()
+        self:Enable()
+        self:RunTests()
+    end
+
+end
