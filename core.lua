@@ -6661,14 +6661,12 @@ do
 end
 
 -- tests.lua
--- dependencies: module, callback, config, util, provider
+-- dependencies: module, config, provider
 do
 
     ---@class TestsModule : Module
     local tests = ns:NewModule("Tests") ---@type TestsModule
-    local callback = ns:GetModule("Callback") ---@type CallbackModule
     local config = ns:GetModule("Config") ---@type ConfigModule
-    local util = ns:GetModule("Util") ---@type UtilModule
     local provider = ns:GetModule("Provider") ---@type ProviderModule
 
     ---@class TestData This can either be a `table` object with the structure as described in the class, or a `function` we call that returns `status` and `explanation` if there is something to report.
@@ -6718,7 +6716,7 @@ do
         end,
     }
 
-    function tests:RunTests()
+    function tests:RunTests(showOnlyFailed)
         ns.Print("|cffFFFFFFRaiderIO|r Running built-in tests:")
         for id, test in ipairs(collection) do
             local status, explanation
@@ -6748,12 +6746,8 @@ do
             else
                 ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d is not supported, skipping.", id))
             end
-            if status ~= nil then
-                if explanation then
-                    ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", explanation))
-                else
-                    ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", status and "Passed!" or "Failed!"))
-                end
+            if status ~= nil and (not showOnlyFailed or not status) then
+                ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", explanation or (status and "Passed!" or "Failed!")))
             end
         end
     end
@@ -6764,7 +6758,7 @@ do
 
     function tests:OnLoad()
         self:Enable()
-        self:RunTests()
+        self:RunTests(true)
     end
 
 end
