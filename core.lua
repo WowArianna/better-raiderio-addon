@@ -6706,18 +6706,19 @@ do
             local test1 = self[1] ---@type TestData
             local test2 = self[2] ---@type TestData
             if test1.status and test2.status and CompareProfiles(test1.profile, test2.profile) then
-                return nil -- no need to report back about this test
+                return true, "Test#1/#2 looked up the same profile."
             elseif not test1.status or not test2.status then
-                return false, "Test#1/#2 failed."
+                return nil, "Test#1/#2 failed." -- we already know
             elseif not CompareProfiles(test1.profile, test2.profile) then
-                return false, "Test#1/#2 looked up different people."
+                return false, "Test#1/#2 looked up different profiles."
             end
-            return false
+            return false, "Unhandled logic branch."
         end,
     }
 
     function tests:RunTests(showOnlyFailed)
         ns.Print("|cffFFFFFFRaiderIO|r Running built-in tests:")
+        local printed
         for id, test in ipairs(collection) do
             local status, explanation
             if type(test) == "function" then
@@ -6744,12 +6745,15 @@ do
                 end
                 status, explanation = test.status, test.explanation
             else
+                printed = true
                 ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d is not supported, skipping.", id))
             end
             if status ~= nil and (not showOnlyFailed or not status) then
+                printed = true
                 ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", explanation or (status and "Passed!" or "Failed!")))
             end
         end
+        ns.Print(format("|cffFFFFFFRaiderIO|r Done! %s", printed and "" or "Nothing to report."))
     end
 
     function tests:CanLoad()
