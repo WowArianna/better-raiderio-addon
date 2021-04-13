@@ -6670,6 +6670,7 @@ do
     local provider = ns:GetModule("Provider") ---@type ProviderModule
 
     ---@class TestData This can either be a `table` object with the structure as described in the class, or a `function` we call that returns `status` and `explanation` if there is something to report.
+    ---@field public skip boolean @Set `true` to skip this test.
     ---@field public region string @`eu`, `us`, etc.
     ---@field public faction string @`1` for Alliance, `2` for Horde.
     ---@field public realm string @The character realm same format as the whisper friendly `GetNormalizedRealmName()` format.
@@ -6698,23 +6699,48 @@ do
         return profile1 == profile2 or (profile1.mythicKeystoneProfile and profile1.mythicKeystoneProfile == profile2.mythicKeystoneProfile) or (profile1.raidProfile and profile1.raidProfile == profile2.raidProfile) or (profile1.pvpProfile and profile1.pvpProfile == profile2.pvpProfile)
     end
 
+    ---@param collection TestData[]
+    local function CheckBothTestsAboveForSameProfiles(collection, id)
+        local id1 = id - 2
+        local id2 = id - 1
+        local test1 = collection[id1]
+        local test2 = collection[id2]
+        if not test1 or not test2 then
+            return nil, format("Test#%d/#%d missing.", id1, id2)
+        elseif test1.skip or test2.skip then
+            return nil, format("Test#%d/#%d marked for skipping.", id1, id2)
+        elseif test1.status and test2.status and CompareProfiles(test1.profile, test2.profile) then
+            return true, format("Test#%d/#%d looked up the same profile.", id1, id2)
+        elseif not test1.status or not test2.status then
+            return nil, format("Test#%d/#%d failed.", id1, id2)
+        elseif not CompareProfiles(test1.profile, test2.profile) then
+            return false, format("Test#%d/#%d looked up different profiles.", id1, id2)
+        end
+        return false, format("Unhandled logic branch.", id)
+    end
+
     ---@type TestData[]
     local collection = {
         [1] = { region = "us", faction = 2, realm = "tichondrius", name = "proview", success = true },
         [2] = { region = "us", faction = 2, realm = "TiChOnDrIuS", name = "pRoViEw", success = true },
-        [3] = function(self)
-            local test1 = self[1] ---@type TestData
-            local test2 = self[2] ---@type TestData
-            if test1.status and test2.status and CompareProfiles(test1.profile, test2.profile) then
-                return true, "Test#1/#2 looked up the same profile."
-            elseif not test1.status or not test2.status then
-                return nil, "Test#1/#2 failed." -- we already know
-            elseif not CompareProfiles(test1.profile, test2.profile) then
-                return false, "Test#1/#2 looked up different profiles."
-            end
-            return false, "Unhandled logic branch."
-        end,
+        [3] = CheckBothTestsAboveForSameProfiles,
+        [4] = { region = "eu", faction = 2, realm = "Корольлич", name = "Тьолка", success = true },
+        [5] = { region = "eu", faction = 2, realm = "КОРОЛЬЛИЧ", name = "ТЬОЛКА", success = true },
+        [6] = CheckBothTestsAboveForSameProfiles,
+        [7] = { region = "eu", faction = 1, realm = "Ravencrest", name = "Mßx", success = true },
+        [8] = { region = "eu", faction = 1, realm = "RAVENCREST", name = "MßX", success = true },
+        [9] = CheckBothTestsAboveForSameProfiles,
     }
+
+    local function HasRegionAndFactionData(region, faction)
+        local providers = provider:GetProviders()
+        for _, provider in pairs(providers) do
+            if provider.region == region and provider.faction == faction then
+                return true
+            end
+        end
+        return false
+    end
 
     function tests:RunTests(showOnlyFailed)
         ns.Print("|cffFFFFFFRaiderIO|r Running built-in tests:")
@@ -6722,28 +6748,30 @@ do
         for id, test in ipairs(collection) do
             local status, explanation
             if type(test) == "function" then
-                status, explanation = test(collection)
+                status, explanation = test(collection, id)
             elseif type(test) == "table" then
-                test.profile = provider:GetProfile(test.name, test.realm, test.faction, test.region)
-                if test.profile and not test.profile.success and test.success == true then
-                    test.status = false
-                    test.explanation = "Profile exists, no data, we expected data."
-                elseif test.profile and test.profile.success and test.success == false then
-                    test.status = false
-                    test.explanation = "Profile exists, has data, we expected no data."
-                elseif not test.profile and test.success ~= nil then
-                    test.status = false
-                    test.explanation = "Profile doesn't exist, we expected data."
-                elseif not test.profile and test.exists == true then
-                    test.status = false
-                    test.explanation = "Profile doesn't exist, we expected it to exist."
-                elseif test.profile and test.exists == false then
-                    test.status = false
-                    test.explanation = "Profile exists exist, we expected it not to exist."
-                else
-                    test.status = true
+                if not test.skip and HasRegionAndFactionData(test.region, test.faction) then
+                    test.profile = provider:GetProfile(test.name, test.realm, test.faction, test.region)
+                    if test.profile and not test.profile.success and test.success == true then
+                        test.status = false
+                        test.explanation = "Profile exists, no data, we expected data."
+                    elseif test.profile and test.profile.success and test.success == false then
+                        test.status = false
+                        test.explanation = "Profile exists, has data, we expected no data."
+                    elseif not test.profile and test.success ~= nil then
+                        test.status = false
+                        test.explanation = "Profile doesn't exist, we expected data."
+                    elseif not test.profile and test.exists == true then
+                        test.status = false
+                        test.explanation = "Profile doesn't exist, we expected it to exist."
+                    elseif test.profile and test.exists == false then
+                        test.status = false
+                        test.explanation = "Profile exists exist, we expected it not to exist."
+                    else
+                        test.status = true
+                    end
+                    status, explanation = test.status, test.explanation
                 end
-                status, explanation = test.status, test.explanation
             else
                 printed = true
                 ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d is not supported, skipping.", id))
