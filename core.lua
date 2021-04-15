@@ -9020,6 +9020,7 @@ do
     function tests:OnLoad()
         self:Enable()
         self:RunTests(true)
+        provider:WipeCache()
         -- AppendTestsFromProviders(OnAppendProviderTestsCompleted, OnAppendProviderTestsProgress) -- DEBUG: excessive testing so we might wanna comment this out when it's not required
     end
 
