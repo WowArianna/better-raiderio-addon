@@ -2807,6 +2807,10 @@ do
 
     callback:RegisterEvent(OnPlayerEnteringWorld, "PLAYER_ENTERING_WORLD")
 
+    function provider:WipeCache()
+        OnPlayerEnteringWorld()
+    end
+
 end
 
 -- loader.lua (internal)
@@ -6724,7 +6728,7 @@ do
     ---@type TestData[]
     local collection = {
         { region = "eu", faction = 1, realm = "Ravencrest", name = "Voidzone", success = true },
-        { region = "eu", faction = 1, realm = "RAVENCREST", name = "VOIDZONE", success = true },
+        { region = "eu", faction = 1, realm = "rAvEnCrEsT", name = "vOIdZoNe", success = true },
         CheckBothTestsAboveForSameProfiles,
         { region = "us", faction = 2, realm = "Skullcrusher", name = "Aspyrox", exists = false },
         { region = "us", faction = 2, realm = "sKuLLcRuSHeR", name = "aSpYrOx", exists = false },
@@ -6744,21 +6748,22 @@ do
         { region = "eu", faction = 2, realm = "Kazzak", name = "Donskís", success = true },
         { region = "eu", faction = 2, realm = "KAZZAK", name = "DONSKÍS", success = true },
         CheckBothTestsAboveForSameProfiles,
-        { region = "tw", faction = 2, realm = "Wrathbringer", name = "凸姿姿凸", success = true },
-        { region = "tw", faction = 2, realm = "WRATHBRINGER", name = "凸姿姿凸", success = true },
+        { region = "tw", faction = 2, realm = "憤怒使者", name = "凸姿姿凸", success = true },
+        { region = "tw", faction = 2, realm = "憤怒使者", name = "凸姿姿凸", success = true },
         CheckBothTestsAboveForSameProfiles,
-        { region = "kr", faction = 1, realm = "Windrunner", name = "갊깖읾옮짊맒", success = true },
-        { region = "kr", faction = 1, realm = "WINDRUNNER", name = "갊깖읾옮짊맒", success = true },
+        { region = "kr", faction = 1, realm = "윈드러너", name = "갊깖읾옮짊맒", success = true },
+        { region = "kr", faction = 1, realm = "윈드러너", name = "갊깖읾옮짊맒", success = true },
         CheckBothTestsAboveForSameProfiles,
-        { region = "kr", faction = 2, realm = "Azshara", name = "벤쉬", success = true },
-        { region = "kr", faction = 2, realm = "AZSHARA", name = "벤쉬", success = true },
+        { region = "kr", faction = 2, realm = "아즈샤라", name = "벤쉬", success = true },
+        { region = "kr", faction = 2, realm = "아즈샤라", name = "벤쉬", success = true },
         CheckBothTestsAboveForSameProfiles,
     }
 
     local providers = provider:GetProviders()
 
-    local function AppendTestsFromProviders()
+    local function AppendTestsFromProviders(callback, progress)
 
+        -- "UTF8" by phanxaddons and pastamancer_wow (https://www.wowace.com/projects/utf8)
         local utf8lower
         local utf8upper do
 
@@ -8818,7 +8823,7 @@ do
 
         local index = #collection
 
-        local function CreateTestFromDB(region, faction, db)
+        local function CreateTestFromDB(_, region, faction, db)
             if not db then
                 return
             end
@@ -8839,24 +8844,115 @@ do
                     else
                         characterNameLC = nil
                     end
-                    if characterNameLC then
-                        index = index + 3
-                        collection[index - 2] = { region = region, faction = faction, realm = realmNameLC or realmName, name = characterNameLC or characterName, success = true }
-                        collection[index - 1] = { region = region, faction = faction, realm = realmNameUC or realmName, name = characterNameUC or characterName, success = true }
-                        collection[index] = CheckBothTestsAboveForSameProfiles
-                    else
-                        index = index + 1
-                        collection[index] = { region = region, faction = faction, realm = realmNameUC or realmName, name = characterName, success = true }
-                    end
+                    index = index + 3
+                    collection[index - 2] = { region = region, faction = faction, realm = realmNameLC or realmName, name = characterNameLC or characterName, success = true }
+                    collection[index - 1] = { region = region, faction = faction, realm = realmNameUC or realmName, name = characterNameUC or characterName, success = true }
+                    collection[index] = CheckBothTestsAboveForSameProfiles
                 end
             end
         end
 
-        for _, provider in pairs(providers) do
-            CreateTestFromDB(provider.region, provider.faction, provider.db1)
-            CreateTestFromDB(provider.region, provider.faction, provider.db2)
+        local function RunQueuedTest(self)
+            wipe(collection)
+            index = 0
+            for i = #self, #self - (3 * 1000) + 1, -1 do
+                local task = table.remove(self, i)
+                if not task then
+                    break
+                end
+                index = index + 1
+                collection[index] = task
+            end
+            tests:RunTests(true, true)
+            provider:WipeCache()
+            return index > 0
         end
 
+        local frame = CreateFrame("Frame")
+        local co, cq, ch, cc, cp
+        local queue, qindex = {}, 0
+        local testqueue, tqindex = {}, 0
+
+        frame:SetScript("OnUpdate", function(frame)
+            frame:Hide()
+            if co then
+                coroutine.resume(co, cq)
+            end
+        end)
+
+        local function OnUpdate(self, ...)
+            while 1 do
+                if ch == CreateTestFromDB then
+                    local args = table.remove(self, 1)
+                    if not args then
+                        break
+                    end
+                    ch(self, args[1], args[2], args[3])
+                    if cp then
+                        cp(self, args)
+                    end
+                else
+                    local continue = ch(self)
+                    if cp then
+                        cp(self)
+                    end
+                    if not continue then
+                        break
+                    end
+                end
+                frame:Show()
+                coroutine.yield()
+            end
+            co = nil
+            if cc then
+                cc()
+            end
+        end
+
+        for _, provider in pairs(providers) do
+            qindex = qindex + 2
+            queue[qindex - 1] = { provider.region, provider.faction, provider.db1 }
+            queue[qindex] = { provider.region, provider.faction, provider.db2 }
+        end
+
+        local function OnCreateSuccess()
+            for _, test in ipairs(collection) do
+                tqindex = tqindex + 1
+                testqueue[tqindex] = test
+            end
+            wipe(collection)
+            co = coroutine.create(OnUpdate)
+            cq = testqueue
+            ch = RunQueuedTest
+            cc = callback
+            cp = progress
+            coroutine.resume(co, cq)
+        end
+
+        ns.Print("|cffFFFFFFRaiderIO|r Running excessive built-in tests:")
+
+        co = coroutine.create(OnUpdate)
+        cq = queue
+        ch = CreateTestFromDB
+        cc = OnCreateSuccess
+        cp = progress
+        coroutine.resume(co, cq)
+
+    end
+
+    local function OnAppendProviderTestsCompleted()
+        provider:WipeCache()
+        ns.Print("|cffFFFFFFRaiderIO|r Done!")
+    end
+
+    local function OnAppendProviderTestsProgress(queue, args)
+        if not args or type(args) ~= "table" then
+            ns.Print(format("[#%d] remaining...", #queue + 1))
+        elseif args[1] then
+            ns.Print(format("[#%d] %s %s %s", #queue + 1, tostring(args[1]), tostring(args[2]), tostring(args[3])))
+        else
+            ns.Print(format("[#%d] %s %s %s %s", #queue + 1, tostring(args.region), tostring(args.faction), tostring(args.realm), tostring(args.name)))
+        end
     end
 
     local function HasRegionAndFactionData(region, faction)
@@ -8868,8 +8964,10 @@ do
         return false
     end
 
-    function tests:RunTests(showOnlyFailed)
-        ns.Print("|cffFFFFFFRaiderIO|r Running built-in tests:")
+    function tests:RunTests(showOnlyFailed, noHeaderOrFooter)
+        if not noHeaderOrFooter then
+            ns.Print(format("|cffFFFFFFRaiderIO|r Running %d built-in tests:", #collection))
+        end
         local printed
         for id, test in ipairs(collection) do
             local status, explanation
@@ -8910,7 +9008,9 @@ do
                 ns.Print(format("|cffFFFFFFRaiderIO|r Test#%d |cff%s%s|r", id, status and "55FF55" or "FF5555", explanation or (status and "Passed!" or "Failed!")))
             end
         end
-        ns.Print(format("|cffFFFFFFRaiderIO|r Done! %s", printed and "" or "Nothing to report."))
+        if not noHeaderOrFooter then
+            ns.Print(format("|cffFFFFFFRaiderIO|r Done! %s", printed and "" or "|cff55FF55Nothing to report.|r"))
+        end
     end
 
     function tests:CanLoad()
@@ -8919,8 +9019,8 @@ do
 
     function tests:OnLoad()
         self:Enable()
-        AppendTestsFromProviders() -- DEBUG: excessive testing so we might wanna comment this out when it's not required
         self:RunTests(true)
+        -- AppendTestsFromProviders(OnAppendProviderTestsCompleted, OnAppendProviderTestsProgress) -- DEBUG: excessive testing so we might wanna comment this out when it's not required
     end
 
 end
