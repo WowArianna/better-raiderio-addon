@@ -8824,13 +8824,30 @@ do
             end
             for realmName, realmData in pairs(db) do
                 local realmNameLC = utf8lower(realmName)
-                local realmNameUC = utf8upper(realmName)
+                local realmNameUC
+                if strcmputf8i(realmNameLC, realmName) == 0 then
+                    realmNameUC = utf8upper(realmName)
+                else
+                    realmNameLC = nil
+                end
                 for i = 2, #realmData do
                     local characterName = realmData[i]
-                    index = index + 3
-                    collection[index - 2] = { region = region, faction = faction, realm = realmNameLC, name = utf8lower(characterName), success = true }
-                    collection[index - 1] = { region = region, faction = faction, realm = realmNameUC, name = utf8upper(characterName), success = true }
-                    collection[index] = CheckBothTestsAboveForSameProfiles
+                    local characterNameLC = utf8lower(characterName)
+                    local characterNameUC
+                    if strcmputf8i(characterNameLC, characterName) == 0 then
+                        characterNameUC = utf8upper(characterName)
+                    else
+                        characterNameLC = nil
+                    end
+                    if characterNameLC then
+                        index = index + 3
+                        collection[index - 2] = { region = region, faction = faction, realm = realmNameLC or realmName, name = characterNameLC or characterName, success = true }
+                        collection[index - 1] = { region = region, faction = faction, realm = realmNameUC or realmName, name = characterNameUC or characterName, success = true }
+                        collection[index] = CheckBothTestsAboveForSameProfiles
+                    else
+                        index = index + 1
+                        collection[index] = { region = region, faction = faction, realm = realmNameUC or realmName, name = characterName, success = true }
+                    end
                 end
             end
         end
@@ -8902,7 +8919,7 @@ do
 
     function tests:OnLoad()
         self:Enable()
-        AppendTestsFromProviders() -- DEBUG: excessive testing so we might wanna turn this off when it's not required
+        AppendTestsFromProviders() -- DEBUG: excessive testing so we might wanna comment this out when it's not required
         self:RunTests(true)
     end
 
