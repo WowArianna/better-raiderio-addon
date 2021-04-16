@@ -8945,13 +8945,24 @@ do
         ns.Print("|cffFFFFFFRaiderIO|r Done!")
     end
 
+    local function CountProfilesInDataSet(data)
+        if type(data) ~= "table" then
+            return 0
+        end
+        local count = 0
+        for _, items in pairs(data) do
+            if type(items) == "table" then
+                count = count + #items - 1
+            end
+        end
+        return count
+    end
+
     local function OnAppendProviderTestsProgress(queue, args)
         if not args or type(args) ~= "table" then
             ns.Print(format("[#%d] remaining...", #queue + 1))
-        elseif args[1] then
-            ns.Print(format("[#%d] %s %s %s", #queue + 1, tostring(args[1]), tostring(args[2]), tostring(args[3])))
         else
-            ns.Print(format("[#%d] %s %s %s %s", #queue + 1, tostring(args.region), tostring(args.faction), tostring(args.realm), tostring(args.name)))
+            ns.Print(format("[#%d] Checking |cffFFFFFF%s %s|r (%d profiles)", #queue + 1, tostring(args[1]), tostring(args[2]), CountProfilesInDataSet(args[3])))
         end
     end
 
