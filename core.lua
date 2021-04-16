@@ -914,6 +914,22 @@ do
         return ltd, regionId
     end
 
+    ---@return any, number @arg1 can be nil (no data), false (server is unknown), string (the ltd). arg2 can be nil (no data), or region ID.
+    function util:GetRegionForServerId(serverId)
+        if not serverId then
+            return
+        end
+        local regionId = REGION[serverId]
+        if not regionId then
+            return
+        end
+        local ltd = ns.REGION_TO_LTD[regionId]
+        if not ltd then
+            return false, regionId
+        end
+        return ltd, regionId
+    end
+
     ---@return number, string @arg1 is the faction ID or nil if no faction is appropriate. arg2 is the faction localized text for display purposes.
     function util:GetFaction(unit)
         if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then
@@ -2855,6 +2871,7 @@ do
         ns.PLAYER_REALM_SLUG = util:GetRealmSlug(ns.PLAYER_REALM)
         _G.RaiderIO_LastCharacter = format("%s-%s-%s", ns.PLAYER_REGION, ns.PLAYER_NAME, ns.PLAYER_REALM_SLUG or ns.PLAYER_REALM)
         _G.RaiderIO_MissingCharacters = {}
+        _G.RaiderIO_MissingServers = {}
         callback:SendEvent("RAIDERIO_PLAYER_LOGIN")
         LoadModules()
     end
@@ -6660,6 +6677,104 @@ do
         CheckInstance(false)
         callback:UnregisterCallback(CheckInstance)
         lastActive = nil
+    end
+
+end
+
+-- serverlog.lua
+-- dependencies: module, callback, config, util
+do
+
+    ---@class ServerLogModule : Module
+    local serverlog = ns:NewModule("ServerLog") ---@type ServerLogModule
+    local callback = ns:GetModule("Callback") ---@type CallbackModule
+    local config = ns:GetModule("Config") ---@type ConfigModule
+    local util = ns:GetModule("Util") ---@type UtilModule
+
+    local TRACKING_EVENTS = {
+        "COMBAT_LOG_EVENT_UNFILTERED",
+        "UNIT_AURA",
+        "UNIT_FLAGS",
+        "UNIT_MODEL_CHANGED",
+        "UNIT_NAME_UPDATE",
+        "UNIT_PHASE",
+        "UNIT_SPELLCAST_CHANNEL_START",
+        "UNIT_SPELLCAST_CHANNEL_STOP",
+        "UNIT_SPELLCAST_START",
+        "UNIT_SPELLCAST_STOP",
+        "UNIT_TARGET",
+    }
+
+    local COMBATLOG_OBJECT_TYPE_PLAYER = _G.COMBATLOG_OBJECT_TYPE_PLAYER or 0x0000400
+
+    local function IsPlayerGUID(guid, flags)
+        if not guid then
+            return false
+        end
+        if flags ~= nil and band(flags, COMBATLOG_OBJECT_TYPE_PLAYER) ~= COMBATLOG_OBJECT_TYPE_PLAYER then
+            return false
+        end
+        return true
+    end
+
+    local function InspectPlayerGUID(guid)
+        if not guid then
+            return
+        end
+        local guidType, serverId = strsplit("-", guid)
+        if guidType ~= "Player" then
+            return
+        end
+        serverId = serverId and tonumber(serverId) or 0
+        if serverId < 1 then
+            return
+        end
+        local ltd, regionId = util:GetRegionForServerId(serverId)
+        if ltd or regionId then
+            return
+        end
+        local cache = _G.RaiderIO_MissingServers[serverId]
+        if cache ~= nil then
+            return
+        end
+        _G.RaiderIO_MissingServers[serverId] = ns.PLAYER_REGION_ID
+    end
+
+    local function OnEvent(event, ...)
+        if event == "COMBAT_LOG_EVENT_UNFILTERED" then
+            local _, _, _, sourceGUID, _, sourceFlags, _, destGUID, _, destFlags = ...
+            if IsPlayerGUID(sourceGUID, sourceFlags) then
+                InspectPlayerGUID(sourceGUID)
+            end
+            if IsPlayerGUID(destGUID, destFlags) then
+                InspectPlayerGUID(destGUID)
+            end
+        else
+            local unit = ...
+            if not unit or not UnitIsPlayer(unit) or UnitIsUnit(unit, "player") then
+                return
+            end
+            local guid = UnitGUID(unit)
+            if guid then
+                InspectPlayerGUID(guid)
+            end
+        end
+    end
+
+    function serverlog:CanLoad()
+        return config:IsEnabled() and config:Get("debugMode") -- TODO: do not load this module by default (it's not yet tested well enough) but we do load it if debug mode is enabled
+    end
+
+    function serverlog:OnLoad()
+        self:Enable()
+    end
+
+    function serverlog:OnEnable()
+        callback:RegisterEvent(OnEvent, unpack(TRACKING_EVENTS))
+    end
+
+    function serverlog:OnDisable()
+        callback:UnregisterEvent(OnEvent, unpack(TRACKING_EVENTS))
     end
 
 end
