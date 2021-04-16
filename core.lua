@@ -6705,18 +6705,26 @@ do
         "UNIT_TARGET",
     }
 
-    local COMBATLOG_OBJECT_TYPE_PLAYER = _G.COMBATLOG_OBJECT_TYPE_PLAYER or 0x0000400
+    local COMBATLOG_OBJECT_AFFILIATION_MINE = _G.COMBATLOG_OBJECT_AFFILIATION_MINE or 0x00000001
+    local COMBATLOG_OBJECT_AFFILIATION_OUTSIDER = _G.COMBATLOG_OBJECT_AFFILIATION_OUTSIDER or 0x00000008
+    local COMBATLOG_OBJECT_CONTROL_PLAYER = _G.COMBATLOG_OBJECT_CONTROL_PLAYER or 0x00000100
+    local COMBATLOG_OBJECT_TYPE_PLAYER = _G.COMBATLOG_OBJECT_TYPE_PLAYER or 0x00000400
 
-    local function IsPlayerGUID(guid, flags)
+    local MINE = bor(COMBATLOG_OBJECT_AFFILIATION_MINE, COMBATLOG_OBJECT_CONTROL_PLAYER)
+    local OTHER_PLAYER = bor(COMBATLOG_OBJECT_AFFILIATION_OUTSIDER, COMBATLOG_OBJECT_CONTROL_PLAYER, COMBATLOG_OBJECT_TYPE_PLAYER)
+
+    ---@return boolean @`true` if the provided guid is another player (context assumes we do check the flags for this information, if flags is nil we only care that guid exists).
+    local function IsOtherPlayerGUID(guid, flags)
         if not guid then
             return false
         end
-        if flags ~= nil and band(flags, COMBATLOG_OBJECT_TYPE_PLAYER) ~= COMBATLOG_OBJECT_TYPE_PLAYER then
+        if flags ~= nil and (band(flags, MINE) > 0 or not band(flags, OTHER_PLAYER) > 0) then
             return false
         end
         return true
     end
 
+    ---@return nil @The provided guid is checked if it's a player, and if the serverId is unknown, if that's the case we will log it into the SV and map it to our known regionId.
     local function InspectPlayerGUID(guid)
         if not guid then
             return
@@ -6743,10 +6751,10 @@ do
     local function OnEvent(event, ...)
         if event == "COMBAT_LOG_EVENT_UNFILTERED" then
             local _, _, _, sourceGUID, _, sourceFlags, _, destGUID, _, destFlags = ...
-            if IsPlayerGUID(sourceGUID, sourceFlags) then
+            if IsOtherPlayerGUID(sourceGUID, sourceFlags) then
                 InspectPlayerGUID(sourceGUID)
             end
-            if IsPlayerGUID(destGUID, destFlags) then
+            if IsOtherPlayerGUID(destGUID, destFlags) then
                 InspectPlayerGUID(destGUID)
             end
         else
@@ -6767,6 +6775,7 @@ do
 
     function serverlog:OnLoad()
         self:Enable()
+        InspectPlayerGUID(UnitGUID("player")) -- in case we are on a missing server we will ensure we log it with this call
     end
 
     function serverlog:OnEnable()
