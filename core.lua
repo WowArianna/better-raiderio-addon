@@ -6713,12 +6713,14 @@ do
     local MINE = bor(COMBATLOG_OBJECT_AFFILIATION_MINE, COMBATLOG_OBJECT_CONTROL_PLAYER)
     local OTHER_PLAYER = bor(COMBATLOG_OBJECT_AFFILIATION_OUTSIDER, COMBATLOG_OBJECT_CONTROL_PLAYER, COMBATLOG_OBJECT_TYPE_PLAYER)
 
+    local CHECKED = {}
+
     ---@return boolean @`true` if the provided guid is another player (context assumes we do check the flags for this information, if flags is nil we only care that guid exists).
     local function IsOtherPlayerGUID(guid, flags)
         if not guid then
             return false
         end
-        if flags ~= nil and (band(flags, MINE) > 0 or not band(flags, OTHER_PLAYER) > 0) then
+        if flags ~= nil and (band(flags, MINE) == MINE or band(flags, OTHER_PLAYER) ~= OTHER_PLAYER) then
             return false
         end
         return true
@@ -6733,7 +6735,11 @@ do
         if guidType ~= "Player" then
             return
         end
-        serverId = serverId and tonumber(serverId) or 0
+        if CHECKED[serverId] then
+            return
+        end
+        CHECKED[serverId] = true
+        serverId = tonumber(serverId) or 0
         if serverId < 1 then
             return
         end
