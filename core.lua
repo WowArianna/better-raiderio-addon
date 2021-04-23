@@ -130,7 +130,7 @@ do
         [30] = 673
     }
 
-    ---@class RaidDifficultyColor[]
+    ---@class RaidDifficultyColor : table
     ---@field public pos1 number @red (0-1.0) - this table can be unpacked to get r, g, b
     ---@field public pos2 number @green (0-1.0) - this table can be unpacked to get r, g, b
     ---@field public pos3 number @blue (0-1.0) - this table can be unpacked to get r, g, b
@@ -192,6 +192,8 @@ do
     ---@field public best CharacterMythicKeystoneRun
     ---@field public runs CharacterMythicKeystoneRun[]
 
+    ---@class Character
+
     ---@return Character<string, CharacterCollection>
     function ns:GetClientData()
         return ns.CLIENT_CHARACTERS
@@ -200,6 +202,8 @@ do
     ---@class ScoreColor
     ---@field public score number
     ---@field public color number[]
+
+    ---@class ScoreColorCollection
 
     ---@return ScoreColorCollection<number, ScoreColor>
     function ns:GetClientColorData()
@@ -228,6 +232,8 @@ do
     ---@field public profile GuildProfile
     ---@field public season_best GuildMythicKeystoneRun[]
     ---@field public weekly_best GuildMythicKeystoneRun[]
+
+    ---@class Guild
 
     ---@return Guild<string, GuildCollection>
     function ns:GetClientGuildData()
@@ -275,15 +281,21 @@ do
         return DUNGEONS
     end
 
+    ---@class RealmCollection
+
     ---@return RealmCollection<string, string>
     function ns:GetRealmData()
         return ns.REALMS or ns.realmSlugs -- DEPRECATED: ns.realmSlugs
     end
 
+    ---@class RegionCollection
+
     ---@return RegionCollection<number, number>
     function ns:GetRegionData()
         return ns.REGIONS or ns.regionIDs -- DEPRECATED: ns.regionIDs
     end
+
+    ---@class ScoreStatsCollection
 
     ---@return ScoreStatsCollection<number, number>
     function ns:GetScoreStatsData()
@@ -298,6 +310,8 @@ do
     ---@class ScoreTierSimple
     ---@field public score number
     ---@field public quality number
+
+    ---@class ScoreTiersSimpleCollection
 
     ---@return ScoreTiersSimpleCollection<number, ScoreTierSimple>
     function ns:GetScoreTiersSimpleData()
@@ -811,7 +825,7 @@ do
         return util:GetDungeonByKeyValue("shortName", name) or util:GetDungeonByKeyValue("shortNameLocale", name)
     end
 
-    ---@param object Widget @Any interface widget object that supports the methods GetScript.
+    ---@param object Region @Any interface widget object that supports the methods GetScript.
     ---@param handler string @The script handler like OnEnter, OnClick, etc.
     ---@return boolean|nil @If successfully executed returns true, otherwise false if nothing has been called. nil if the widget had no handler to execute.
     function util:ExecuteWidgetHandler(object, handler, ...)
@@ -828,8 +842,8 @@ do
         return true
     end
 
-    ---@param object Widget @Any interface widget object that supports the methods GetOwner.
-    ---@param owner Widget @Any interface widget object.
+    ---@param object Region @Any interface widget object that supports the methods GetOwner.
+    ---@param owner Region @Any interface widget object.
     ---@param anchor string @`ANCHOR_TOPLEFT`, `ANCHOR_NONE`, `ANCHOR_CURSOR`, etc.
     ---@param offsetX number @Optional offset X for some of the anchors.
     ---@param offsetY number @Optional offset Y for some of the anchors.
@@ -1166,8 +1180,8 @@ do
 
     ---@return LFDStatus
     function util:GetLFDStatus()
-        ---@type LFDStatus
-        local temp = { dungeon = nil, hosting = false, queued = false }
+        local temp = {} ---@type LFDStatus
+        temp.dungeon, temp.hosting, temp.queued = nil, false, false
         local index = 0
         local activityInfo = C_LFGList.GetActiveEntryInfo()
         if activityInfo and activityInfo.activityID then
@@ -3044,6 +3058,8 @@ do
     ---@field public region string @"us","kr","eu","tw","cn"
     ---@field public options number @render.Flags
 
+    ---@class TooltipStates
+
     ---@type TooltipStates<table, TooltipState>
     local tooltipStates = {}
 
@@ -3735,6 +3751,7 @@ end
 -- dependencies: module, config, util, render
 do
 
+    ---@class GameTooltipModule : Module
     local tooltip = ns:NewModule("GameTooltip") ---@type GameTooltipModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
@@ -3781,6 +3798,7 @@ end
 -- dependencies: module, config, util, render
 do
 
+    ---@class FriendTooltipModule : Module
     local tooltip = ns:NewModule("FriendTooltip") ---@type FriendTooltipModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
@@ -4459,6 +4477,11 @@ do
         tooltip:SetFrameStrata(frameStrata or FALLBACK_ANCHOR_STRATA)
         return frame, strata
     end
+
+    ---@class ConfigProfilePoint
+    ---@field public point string|nil
+    ---@field public x number|nil
+    ---@field public y number|nil
 
     ---@return table, string @Returns the used frame and strata after logical checks have been performed on the provided frame and strata values.
     local function SetUserAnchor()
@@ -6803,7 +6826,7 @@ do
     local config = ns:GetModule("Config") ---@type ConfigModule
     local provider = ns:GetModule("Provider") ---@type ProviderModule
 
-    ---@class TestData This can either be a `table` object with the structure as described in the class, or a `function` we call that returns `status` and `explanation` if there is something to report.
+    ---@class TestData @This can either be a `table` object with the structure as described in the class, or a `function` we call that returns `status` and `explanation` if there is something to report.
     ---@field public skip boolean @Set `true` to skip this test.
     ---@field public region string @`eu`, `us`, etc.
     ---@field public faction string @`1` for Alliance, `2` for Horde.
