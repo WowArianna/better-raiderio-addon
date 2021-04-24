@@ -1180,8 +1180,12 @@ do
 
     ---@return LFDStatus
     function util:GetLFDStatus()
-        local temp = {} ---@type LFDStatus
-        temp.dungeon, temp.hosting, temp.queued = nil, false, false
+        ---@type LFDStatus
+        local temp = {
+            dungeon = nil,
+            hosting = false,
+            queued = false,
+        }
         local index = 0
         local activityInfo = C_LFGList.GetActiveEntryInfo()
         if activityInfo and activityInfo.activityID then
@@ -6895,8 +6899,8 @@ do
         { region = "eu", faction = 2, realm = "Корольлич", name = "Тьолка", success = true },
         { region = "eu", faction = 2, realm = "КОРОЛЬЛИЧ", name = "ТЬОЛКА", success = true },
         CheckBothTestsAboveForSameProfiles,
-        { region = "eu", faction = 1, realm = "Ravencrest", name = "Mßx", success = true },
-        { region = "eu", faction = 1, realm = "RAVENCREST", name = "MßX", success = true },
+        { region = "eu", faction = 2, realm = "Ravencrest", name = "Mßx", success = true },
+        { region = "eu", faction = 2, realm = "RAVENCREST", name = "MßX", success = true },
         CheckBothTestsAboveForSameProfiles,
         { region = "eu", faction = 2, realm = "Kazzak", name = "Donskís", success = true },
         { region = "eu", faction = 2, realm = "KAZZAK", name = "DONSKÍS", success = true },
