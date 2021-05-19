@@ -6633,9 +6633,8 @@ do
         callback:RegisterEvent(UpdateModuleState, "RAIDERIO_SETTINGS_SAVED")
     end
 
-    ---@type LibCombatLogging
-    local LibCombatLogging = LibStub and LibStub:GetLibrary("LibCombatLogging-1.0", true)
-    local LoggingCombat = LibCombatLogging and LibCombatLogging.LoggingCombat or _G.LoggingCombat
+    local LibCombatLogging = LibStub and LibStub:GetLibrary("LibCombatLogging-1.0", true) ---@type LibCombatLogging
+    local LoggingCombat = LibCombatLogging and function(...) return LibCombatLogging.LoggingCombat(addonName, ...) end or _G.LoggingCombat
 
     local autoLogInstanceMapIDs
     local autoLogDifficultyIDs do

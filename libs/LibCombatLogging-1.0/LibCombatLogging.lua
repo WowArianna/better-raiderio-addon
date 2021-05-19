@@ -1,19 +1,30 @@
 local MAJOR, MINOR = "LibCombatLogging-1.0", 1
 assert(LibStub, MAJOR .. " requires LibStub")
 
----@class LibCombatLogging @The Public API this Library exports that you can use for autocompletion.
----@class LibCombatLogging_AddOn @`nil`, `true`, or `string` that is the addon name or unique handle. Both `nil` and `true` return the shared logging state where any code call that enabled logging, that could not be tracked to a specific addon, is also lumped in together.
+---@class LibCombatLogging @The core library table accessible by the library users to start, stop or get logging states. Add `---@type LibCombatLogging` where you import it to enable annotations.
+
+---@class LibCombatLogging_AddOn @The addon handle can be anything unique to your addon or call path, most common cases are unique addon name, or your unique addon table, used for tracking purposes.
 
 ---@type LibCombatLogging
-local Lib = LibStub:NewLibrary(MAJOR, MINOR)
+local Lib, PrevMinor = LibStub:NewLibrary(MAJOR, MINOR)
 if not Lib then return end
 
-local Logging = {} --- Internal `table` tracking combat logging handles.
-local LoggingShared = setmetatable({}, { __metadata = false }) --- Shared `table` populated on-demand with handles that are keeping combat logging enabled.
-local OrigLoggingCombat = rawget(_G, "LoggingCombat") --- Reference to the original global API to start, stop and get combat log state.
+Lib._Logging = Lib._Logging or {} --- Internal `table` tracking active combat logging handles.
+Lib._OrigLoggingCombat = Lib._OrigLoggingCombat or _G.LoggingCombat --- Reference to the original global API to start, stop and get combat log state.
 
----@return number `arg1` is the amount of handles that are logging combat
-local function CountLoggers()
+local Logging = Lib._Logging
+local OrigLoggingCombat = Lib._OrigLoggingCombat
+
+--- Checks if the addon handle has logging enabled.
+---@return boolean isLogging @`true` if the addon handle is logging.
+---@param addon LibCombatLogging_AddOn
+local function IsLogging(addon)
+	return Logging[addon]
+end
+
+--- Counts how many addon handles have logging enabled.
+---@return number numLoggers @Number of logging handles.
+local function GetNumLogging()
 	local c = 0
 	for k, v in pairs(Logging) do
 		c = c + 1
@@ -21,112 +32,75 @@ local function CountLoggers()
 	return c
 end
 
+--- Starts logging combat for the provided addon handle.
 ---@param addon LibCombatLogging_AddOn
----@return boolean, number @`arg1` is the combat logging state for `addon`, and `arg2` returns the amount of addon handles logging combat.
 local function StartLogging(addon)
 	Logging[addon] = true
-	local count = CountLoggers()
 	if not OrigLoggingCombat() then
-		return OrigLoggingCombat(true), count
+		OrigLoggingCombat(true)
 	end
-	return true, count
 end
 
+--- Stops logging combat for the provided addon handle.
 ---@param addon LibCombatLogging_AddOn
----@return boolean, number @`arg1` is the combat logging state for `addon`, and `arg2` returns the amount of addon handles logging combat.
 local function StopLogging(addon)
 	Logging[addon] = nil
-	local count = CountLoggers()
 	if not next(Logging) and OrigLoggingCombat() then
-		return OrigLoggingCombat(false), count
+		OrigLoggingCombat(false)
 	end
-	return false, count
 end
 
+--- Similar to the original API for LoggingCombat, but you must provide an addon handle, then you can provide a new state, or omit and return the status for the addon handle.
+--- ```
+--- local addonName = ...
+--- local LibCombatLogging = LibStub("LibCombatLogging-1.0")
+--- local LoggingCombat = function(...) return LibCombatLogging.LoggingCombat(addonName, ...) end
+--- ```
 ---@param addon LibCombatLogging_AddOn
----@return boolean, number @`arg1` is the combat logging state for `addon`, and `arg2` returns the amount of addon handles logging combat.
-local function GetLogging(addon)
-	return Logging[addon], CountLoggers()
-end
-
----@param addon LibCombatLogging_AddOn
----@param newstate nil|boolean @If `nil` it returns the current state for `addon`, otherwise it starts or stops combat logging.
----@return boolean, number @`arg1` is the combat logging state for `addon`, and `arg2` returns the amount of addon handles logging combat.
-local function AddOnLoggingCombat(addon, newstate, ...)
-	addon = addon or true
+---@param newstate boolean|nil @`true` to enable logging, `false` to disable, and `nil` to not change the state and only return logging state for the addon handle.
+---@return boolean isLogging @`true` if the addon handle is logging.
+---@return number numLoggers @Number of logging handles.
+local function LoggingCombat(addon, newstate)
+	if addon == nil then
+		addon = true
+	end
 	if newstate then
-		return StartLogging(addon, ...)
+		StartLogging(addon)
 	elseif newstate ~= nil then
-		return StopLogging(addon, ...)
+		StopLogging(addon)
 	end
-	return GetLogging(addon, ...)
+	return IsLogging(addon), GetNumLogging()
 end
 
----@param addon LibCombatLogging_AddOn
----@return boolean, number @`arg1` is the combat logging state for `addon`, but if `addon` was `nil` you will get a `table` containing all handles that are keeping the combat logged.
-local function IsLoggingCombat(addon)
-	if addon ~= nil then
-		return Logging[addon]
-	end
-	if not next(Logging) then
-		return
-	end
-	wipe(LoggingShared)
-	for k, v in pairs(Logging) do
-		LoggingShared[k] = v
-	end
-	return LoggingShared
-end
-
----Wrapper for the native global API `LoggingCombat`. The `varargs` for this function are identical to the native `LoggingCombat` function. This function augments and tries to extract the calling code to use as handle so each call can have its separate handle, so combat logging is only disabled when all handles have said they don't need combat logging for themselves.
----@return boolean, number @`arg1` is the combat logging state for `addon`, and `arg2` returns the amount of addon handles logging combat.
-local function LoggingCombat(...)
+--- A crude implementation, it's not recommended that you use this, instead please look at the `LoggingCombat` function with a more proper example how to implement this library in your addon. I'm adding this for completeness but please do not use this code:
+--- ```
+--- local LibCombatLogging = LibStub("LibCombatLogging-1.0")
+--- local LoggingCombat = LibCombatLogging.WrapLoggingCombat
+--- ```
+local function WrapLoggingCombat(...)
+	local addon
 	local stack = debugstack(3)
 	if stack then
 		stack = {strsplit("[\r\n]", stack)}
 		for i = #stack, 1, -1 do
 			local text = stack[i]
-			local addon = text:match("[\\/]-[Aa][Dd][Dd][Oo][Nn][Ss][\\/]-([^\\/]+)[\\/]-")
+			addon = text:match("[\\/]-[Aa][Dd][Dd][Oo][Nn][Ss][\\/]-([^\\/]+)[\\/]-")
 			if addon then
-				return AddOnLoggingCombat(addon, ...)
+				break
 			end
 		end
 	end
-	return AddOnLoggingCombat(nil, ...)
+	return LoggingCombat(addon, ...)
 end
 
--- Private API
----@type LibCombatLogging
-local Private = {
-	LoggingCombat = LoggingCombat,
-	IsLoggingCombat = IsLoggingCombat,
-	AddOnLoggingCombat = AddOnLoggingCombat,
-}
-
 -- Public API
----@type LibCombatLogging
-setmetatable(Lib, {
-	__metatable = false,
-	__newindex = function()
-	end,
-	__index = function(self, key)
-		return Private[key]
-	end,
-	__call = function(self, key, ...)
-		local func = Private[key]
-		if not func then
-			return
-		end
-		return func(...)
-	end,
-})
-
---[[ EXAMPLE:
-local LibCombatLogging = LibStub and LibStub("LibCombatLogging-1.0", true)
-local LoggingCombat = LibCombatLogging and LibCombatLogging.LoggingCombat or _G.LoggingCombat
---]]
+Lib.IsLogging = IsLogging
+Lib.GetNumLogging = GetNumLogging
+Lib.StartLogging = StartLogging
+Lib.StopLogging = StopLogging
+Lib.LoggingCombat = LoggingCombat
+Lib.WrapLoggingCombat = WrapLoggingCombat
 
 --[[ DEBUG:
-rawset(_G, "LoggingCombat", LoggingCombat) -- forces everyone that calls the global API to go via our wrapper
--- /run local L=LibStub("LibCombatLogging-1.0")print(L.IsLoggingCombat(),L.AddOnLoggingCombat())
+_G.LoggingCombat = WrapLoggingCombat -- dangerous, it forces all the global API calls outside the library to go through the library forcefully for everyone
 --]]
