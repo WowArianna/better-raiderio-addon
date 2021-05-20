@@ -32,6 +32,38 @@ local function GetNumLogging()
 	return c
 end
 
+--- Returns a string of all the addon handles that are logging combat.
+---@param excludeAddon LibCombatLogging_AddOn @Optional exception to exclude from the table, this would most likely be your own handle.
+---@return string|nil @Example return could be `X`, or `X, Y and 2 undefined` or `nil` if nothing is currently logging combat.
+local function GetLoggingAddOns(excludeAddon)
+	local temp = {}
+	local i = 0
+	local undef = 0
+	for k, _ in pairs(Logging) do
+		if excludeAddon == nil or excludeAddon ~= k then
+			if k == true then
+				i = i + 1
+				temp[i] = "/combatlog"
+			elseif type(k) == "string" then
+				i = i + 1
+				temp[i] = k
+			else
+				undef = undef + 1
+			end
+		end
+	end
+	if i > 1 then
+		table.sort(temp, function (a, b) return a > b end)
+	end
+	if undef > 0 then
+		i = i + 1
+		temp[i] = format("+%d undefined", undef)
+	end
+	if i > 0 then
+		return table.concat(temp, ", ")
+	end
+end
+
 --- Starts logging combat for the provided addon handle.
 ---@param addon LibCombatLogging_AddOn
 local function StartLogging(addon)
@@ -93,9 +125,23 @@ local function WrapLoggingCombat(...)
 	return LoggingCombat(addon, ...)
 end
 
+--- Wrap the /combatlog command with our library
+function SlashCmdList.COMBATLOG(msg)
+	local info = ChatTypeInfo.SYSTEM
+	local addon = true
+	if LoggingCombat(addon) then
+		LoggingCombat(addon, false)
+		DEFAULT_CHAT_FRAME:AddMessage(COMBATLOGDISABLED, info.r, info.g, info.b, info.id)
+	else
+		LoggingCombat(addon, true)
+		DEFAULT_CHAT_FRAME:AddMessage(COMBATLOGENABLED, info.r, info.g, info.b, info.id)
+	end
+end
+
 -- Public API
 Lib.IsLogging = IsLogging
 Lib.GetNumLogging = GetNumLogging
+Lib.GetLoggingAddOns = GetLoggingAddOns
 Lib.StartLogging = StartLogging
 Lib.StopLogging = StopLogging
 Lib.LoggingCombat = LoggingCombat

@@ -6694,6 +6694,7 @@ do
         LoggingCombat(setLogging)
         local info = ChatTypeInfo["SYSTEM"]
         DEFAULT_CHAT_FRAME:AddMessage("|cffFFFFFFRaider.IO|r: " .. (setLogging and COMBATLOGENABLED or COMBATLOGDISABLED), info.r, info.g, info.b, info.id)
+        -- TODO: https://discord.com/channels/311861458847662081/364490616891113472/844929450957078619
     end
 
     function combatlog:OnEnable()
