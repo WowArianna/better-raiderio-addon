@@ -6634,7 +6634,7 @@ do
     end
 
     local LibCombatLogging = LibStub and LibStub:GetLibrary("LibCombatLogging-1.0", true) ---@type LibCombatLogging
-    local LoggingCombat = LibCombatLogging and function(...) return LibCombatLogging.LoggingCombat(addonName, ...) end or _G.LoggingCombat
+    local LoggingCombat = LibCombatLogging and function(...) return LibCombatLogging.LoggingCombat("Raider.IO", ...) end or _G.LoggingCombat
 
     local autoLogInstanceMapIDs
     local autoLogDifficultyIDs do
@@ -6692,9 +6692,10 @@ do
         previouslyEnabledLogging = setLogging
         config:Set("previouslyEnabledLogging", setLogging)
         LoggingCombat(setLogging)
-        local info = ChatTypeInfo["SYSTEM"]
-        DEFAULT_CHAT_FRAME:AddMessage("|cffFFFFFFRaider.IO|r: " .. (setLogging and COMBATLOGENABLED or COMBATLOGDISABLED), info.r, info.g, info.b, info.id)
-        -- TODO: https://discord.com/channels/311861458847662081/364490616891113472/844929450957078619
+        if not LibCombatLogging then
+            local info = ChatTypeInfo.SYSTEM
+            DEFAULT_CHAT_FRAME:AddMessage("|cffFFFFFFRaider.IO|r: " .. (setLogging and COMBATLOGENABLED or COMBATLOGDISABLED), info.r, info.g, info.b, info.id)
+        end
     end
 
     function combatlog:OnEnable()
