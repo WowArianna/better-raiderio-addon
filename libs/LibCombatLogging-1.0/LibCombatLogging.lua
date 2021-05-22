@@ -24,6 +24,8 @@ CallbackEvents.STOPPED_LOGGING = "STOPPED_LOGGING"
 CallbackEvents.ADDON_STARTED_LOGGING = "ADDON_STARTED_LOGGING"
 CallbackEvents.ADDON_STOPPED_LOGGING = "ADDON_STOPPED_LOGGING"
 
+local SLASH_COMBATLOG_NAME = "/combatlog"
+
 --- Calls all registered callbacks for an event.
 ---@param event string @The `event` that is fired.
 local function EmitCallback(event, ...)
@@ -214,12 +216,12 @@ local function WrapLoggingCombat(...)
 			end
 		end
 	end
-	return LoggingCombat(addon or "/combatlog", ...)
+	return LoggingCombat(addon or SLASH_COMBATLOG_NAME, ...)
 end
 
 --- Override /combatlog to use our library so we can track the default interface state
 function SlashCmdList.COMBATLOG(msg)
-	local addon = "/combatlog"
+	local addon = SLASH_COMBATLOG_NAME
 	if LoggingCombat(addon) then
 		LoggingCombat(addon, false)
 	else
@@ -234,13 +236,13 @@ do
 		local info = ChatTypeInfo.SYSTEM
 		if event == CallbackEvents.ADDON_STARTED_LOGGING then
 			local otherAddons = GetLoggingAddOns(addon)
-			local prefix = type(addon) == "string" and "|cffFFFFFF" .. addon .. "|r: " or ""
 			local suffix = otherAddons and " (" .. otherAddons .. " also logging)" or ""
+			local prefix = addon == SLASH_COMBATLOG_NAME and "" or (type(addon) == "string" and "|cffFFFFFF" .. addon .. "|r: " or "")
 			DEFAULT_CHAT_FRAME:AddMessage(prefix .. COMBATLOGENABLED .. suffix, info.r, info.g, info.b, info.id)
 		elseif event == CallbackEvents.ADDON_STOPPED_LOGGING then
 			local otherAddons = GetLoggingAddOns(addon)
-			local prefix = type(addon) == "string" and "|cffFFFFFF" .. addon .. "|r: " or ""
 			local suffix = otherAddons and " (" .. otherAddons .. " still logging)" or ""
+			local prefix = addon == SLASH_COMBATLOG_NAME and "" or (type(addon) == "string" and "|cffFFFFFF" .. addon .. "|r: " or "")
 			DEFAULT_CHAT_FRAME:AddMessage(prefix .. COMBATLOGDISABLED .. suffix, info.r, info.g, info.b, info.id)
 		elseif event == CallbackEvents.STARTED_LOGGING then
 			if not addon then
@@ -274,6 +276,6 @@ Lib.StopLogging = StopLogging
 Lib.LoggingCombat = LoggingCombat
 -- Lib.WrapLoggingCombat = WrapLoggingCombat
 
---[[ DEBUG:
+-- [[ DEBUG:
 _G.LoggingCombat = WrapLoggingCombat -- dangerous, it forces all the global API calls outside the library to go through the library forcefully for everyone
 --]]
