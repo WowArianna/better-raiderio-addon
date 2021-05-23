@@ -81,10 +81,10 @@ local function UnregisterCallback(callback, ...)
 end
 
 --- Checks if the addon handle has logging enabled.
----@return boolean isLogging @`true` if the addon handle is logging.
+---@return boolean isLogging @`true` if the addon handle is logging, otherwise `false` if not.
 ---@param addon LibCombatLogging_AddOn
 local function IsLogging(addon)
-	return Logging[addon]
+	return not not Logging[addon]
 end
 
 --- Counts how many addon handles have logging enabled.
@@ -186,16 +186,21 @@ end
 --- ```
 ---@param addon LibCombatLogging_AddOn
 ---@param newstate boolean|nil @`true` to enable logging, `false` to disable, and `nil` to not change the state and only return logging state for the addon handle.
----@return boolean isLogging @`true` if the addon handle is logging.
+---@return boolean|nil isLogging @`true` if the addon handle is logging, otherwise `false` if not. `nil` would mean that the start/stop state change was attempted, but the API is not in a state to apply it, so you need to retry again later.
 ---@return number numLoggers @Number of logging handles.
 local function LoggingCombat(addon, newstate)
 	assert(type(addon) == "string", "LibCombatLogging.LoggingCombat(addon[, newstate]) expects addon to be a string.")
+	local success = true
 	if newstate then
-		StartLogging(addon)
+		success = StartLogging(addon)
 	elseif newstate ~= nil then
-		StopLogging(addon)
+		success = StopLogging(addon)
 	end
-	return IsLogging(addon), GetNumLogging()
+	local count = GetNumLogging()
+	if not success then
+		return nil, count
+	end
+	return IsLogging(addon), count
 end
 
 --- A crude implementation, it's not recommended that you use this, instead please look at the `LoggingCombat` function with a more proper example how to implement this library in your addon. I'm adding this for completeness but please do not use this code:
@@ -277,5 +282,5 @@ Lib.LoggingCombat = LoggingCombat
 -- Lib.WrapLoggingCombat = WrapLoggingCombat
 
 -- [[ DEBUG:
-_G.LoggingCombat = WrapLoggingCombat -- dangerous, it forces all the global API calls outside the library to go through the library forcefully for everyone
+_G.LoggingCombat = WrapLoggingCombat -- dangerous, but nice for debugging all combat logging addons that are running, as it forces everyone that calls the global API through our library
 --]]
