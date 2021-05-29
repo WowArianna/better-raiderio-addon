@@ -4836,6 +4836,12 @@ do
         local faction = ns.PLAYER_FACTION
         if type(self.GetMemberInfo) == "function" then
             local info = self:GetMemberInfo()
+
+            -- function exists but returns null when on "Pending Invites" header
+            if info == nil then
+                return
+            end
+
             clubType = info.clubType
             nameAndRealm = info.name
             level = info.level
