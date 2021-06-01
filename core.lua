@@ -4836,6 +4836,9 @@ do
         local faction = ns.PLAYER_FACTION
         if type(self.GetMemberInfo) == "function" then
             local info = self:GetMemberInfo()
+            if not info then
+                return
+            end
             clubType = info.clubType
             nameAndRealm = info.name
             level = info.level
