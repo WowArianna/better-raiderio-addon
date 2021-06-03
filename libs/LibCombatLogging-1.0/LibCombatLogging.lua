@@ -11,7 +11,7 @@ if not Lib then return end
 
 Lib._Logging = Lib._Logging or {} --- Internal `table` tracking active combat logging handles.
 Lib._OrigLoggingCombat = Lib._OrigLoggingCombat or _G.LoggingCombat --- Reference to the original global API to start, stop and get combat log state.
-Lib._Callbacks = Lib._Callbacks or {} -- Internal `table` tracking active callbacks to logging state changes.
+Lib._Callbacks = Lib._Callbacks or LibStub("CallbackHandler-1.0"):New(Lib) -- Internal `table` tracking active callbacks to logging state changes.
 Lib.CallbackEvents = Lib.CallbackEvents or {} -- Utility `table` over valid callback events.
 
 local Logging = Lib._Logging
@@ -25,60 +25,6 @@ CallbackEvents.ADDON_STARTED_LOGGING = "ADDON_STARTED_LOGGING"
 CallbackEvents.ADDON_STOPPED_LOGGING = "ADDON_STOPPED_LOGGING"
 
 local SLASH_COMBATLOG_NAME = "/combatlog"
-
---- Calls all registered callbacks for an event.
----@param event string @The `event` that is fired.
-local function EmitCallback(event, ...)
-	local callbacks = Callbacks[event]
-	if not callbacks then
-		return
-	end
-	local cleanup = {}
-	for func, _ in pairs(callbacks) do
-		if not pcall(func, event, ...) then
-			cleanup[func] = true
-		end
-	end
-	for func, _ in pairs(cleanup) do
-		callbacks[func] = nil
-	end
-end
-
---- Registers a callback function for one or multiple events.
----@param callback function @Callback function for when an event occurs.
----@vararg string @One or several `event` you want the callback to be called on when occuring.
-local function RegisterCallback(callback, ...)
-	assert(type(callback) == "function", "LibCombatLogging.RegisterCallback(callback) expects callback to be a function.")
-	local events = {...}
-	for _, event in pairs(events) do
-		local callbacks = Callbacks[event]
-		if not callbacks then
-			callbacks = {}
-			Callbacks[event] = callbacks
-		end
-		callbacks[callback] = true
-	end
-end
-
---- Unregisters a callback function for one or multiple events, but if you omit any events, then your callback will be removed from all events.
----@param callback function @Callback function for when an event occurs.
----@vararg string @One or several `event` you want the callback to be called on when occuring. Omit this to unregister from all events.
-local function UnregisterCallback(callback, ...)
-	assert(type(callback) == "function", "LibCombatLogging.UnregisterCallback(callback) expects callback to be a function.")
-	local events = {...}
-	if events[1] then
-		for _, event in pairs(events) do
-			local callbacks = Callbacks[event]
-			if callbacks then
-				callbacks[callback] = nil
-			end
-		end
-	else
-		for _, callbacks in pairs(Callbacks) do
-			callbacks[callback] = nil
-		end
-	end
-end
 
 --- Checks if the addon handle has logging enabled.
 ---@return boolean isLogging @`true` if the addon handle is logging, otherwise `false` if not.
@@ -142,10 +88,10 @@ local function StartLogging(addon)
 	if OrigLoggingCombat() == true then
 		Logging[addon] = true
 		if prev ~= true then
-			EmitCallback(CallbackEvents.ADDON_STARTED_LOGGING, addon)
-			EmitCallback(CallbackEvents.STARTED_LOGGING, addon)
+			Callbacks:Fire(CallbackEvents.ADDON_STARTED_LOGGING, addon)
+			Callbacks:Fire(CallbackEvents.STARTED_LOGGING, addon)
 		else
-			EmitCallback(CallbackEvents.STARTED_LOGGING)
+			Callbacks:Fire(CallbackEvents.STARTED_LOGGING)
 		end
 		return true
 	end
@@ -168,10 +114,10 @@ local function StopLogging(addon)
 	if not isLast or OrigLoggingCombat() == false then
 		Logging[addon] = nil
 		if prev == true then
-			EmitCallback(CallbackEvents.ADDON_STOPPED_LOGGING, addon)
-			EmitCallback(CallbackEvents.STOPPED_LOGGING, addon)
+			Callbacks:Fire(CallbackEvents.ADDON_STOPPED_LOGGING, addon)
+			Callbacks:Fire(CallbackEvents.STOPPED_LOGGING, addon)
 		else
-			EmitCallback(CallbackEvents.STOPPED_LOGGING)
+			Callbacks:Fire(CallbackEvents.STOPPED_LOGGING)
 		end
 		return true
 	end
@@ -237,7 +183,7 @@ end
 --- On start and stop events print the appropriate text in the chat to inform the user about what is going on
 do
 
-	local function OnEvent(event, addon)
+	local function OnEvent(event, addon, ...)
 		local info = ChatTypeInfo.SYSTEM
 		if event == CallbackEvents.ADDON_STARTED_LOGGING then
 			local otherAddons = GetLoggingAddOns(addon)
@@ -260,19 +206,14 @@ do
 		end
 	end
 
-	RegisterCallback(
-		OnEvent,
-		CallbackEvents.ADDON_STARTED_LOGGING,
-		CallbackEvents.ADDON_STOPPED_LOGGING,
-		CallbackEvents.STARTED_LOGGING,
-		CallbackEvents.STOPPED_LOGGING
-	)
+	Lib.RegisterCallback(Callbacks, CallbackEvents.ADDON_STARTED_LOGGING, OnEvent)
+	Lib.RegisterCallback(Callbacks, CallbackEvents.ADDON_STOPPED_LOGGING, OnEvent)
+	Lib.RegisterCallback(Callbacks, CallbackEvents.STARTED_LOGGING, OnEvent)
+	Lib.RegisterCallback(Callbacks, CallbackEvents.STOPPED_LOGGING, OnEvent)
 
 end
 
 -- Public API
-Lib.RegisterCallback = RegisterCallback
-Lib.UnregisterCallback = UnregisterCallback
 Lib.IsLogging = IsLogging
 Lib.GetNumLogging = GetNumLogging
 Lib.GetLoggingAddOns = GetLoggingAddOns
@@ -281,6 +222,6 @@ Lib.StopLogging = StopLogging
 Lib.LoggingCombat = LoggingCombat
 -- Lib.WrapLoggingCombat = WrapLoggingCombat
 
--- [[ DEBUG:
+--[[ DEBUG:
 _G.LoggingCombat = WrapLoggingCombat -- dangerous, but nice for debugging all combat logging addons that are running, as it forces everyone that calls the global API through our library
 --]]
