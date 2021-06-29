@@ -1510,7 +1510,7 @@ do
         elseif IsInGroup() then
             unitPrefix = "party"
             startIndex = 0
-            endIndex = endIndex - 1 
+            endIndex = endIndex - 1
         end
         if unitPrefix then
             data.group = GetGroupData(unitPrefix, startIndex, endIndex)
@@ -2303,6 +2303,15 @@ do
     local CLIENT_CHARACTERS = ns:GetClientData()
     local DUNGEONS = ns:GetDungeonData()
 
+	---@param results DataProviderMythicKeystoneProfile
+	local function ApplySelfDataToMythicKeystoneData(results, name, realm)
+		local myName, myRealm = util:GetNameRealm("player")
+
+		if myName == name and myRealm == realm then
+			results.currentScore = C_ChallengeMode.GetOverallDungeonScore()
+		end
+	end
+
     ---@param results DataProviderMythicKeystoneProfile
     local function ApplyClientDataToMythicKeystoneData(results, name, realm)
         if not CLIENT_CHARACTERS or not config:Get("enableClientEnhancements") then
@@ -2428,6 +2437,7 @@ do
         results.maxDungeonLevel = results.dungeons[results.maxDungeonIndex]
         results.maxDungeon = DUNGEONS[results.maxDungeonIndex]
         ApplyClientDataToMythicKeystoneData(results, name, realm)
+		ApplySelfDataToMythicKeystoneData(results, name, realm)
         results.sortedMilestones = {}
         if results.keystoneTwentyPlus > 0 then
             results.sortedMilestones[#results.sortedMilestones + 1] = {
@@ -2759,6 +2769,71 @@ do
         return profile
     end
 
+	function CreateEmptyMythicKeystoneData()
+		return {
+			mplusCurrent = {
+				score = 0,
+				roles = {}
+			},
+			mplusPrevious = {
+				score = 0,
+				roles = {}
+			},
+			mplusMainCurrent = {
+				score = 0,
+				roles = {}
+			},
+			mplusMainPrevious = {
+				score = 0,
+				roles = {}
+			},
+			sortedDungeons = {},
+			dungeons = {},
+			maxDungeon = 0,
+			maxDungeonLevel = 0,
+			sortedMilestones = {}
+		}
+	end
+
+	---@param name string
+	---@param realm string
+	---@param faction number
+	---@param overallScore number
+	function provider:OverrideProfile(name, realm, faction, overallScore)
+		if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" then
+			return
+		end
+		local region = ns.PLAYER_REGION
+		local guid = region .. " " .. faction .. " " .. realm .. " " .. name
+		local cache = profileCache[guid]
+
+		if cache then
+			if cache.success and cache['mythicKeystoneProfile'] then
+				cache['mythicKeystoneProfile']['currentScore'] = overallScore
+				cache['mythicKeystoneProfile']['mplusCurrent']['score'] = overallScore
+			end
+			return
+		end
+
+		local mythicKeystoneProfile = CreateEmptyMythicKeystoneData()
+		mythicKeystoneProfile.currentScore = overallScore
+		mythicKeystoneProfile.mplusCurrent.score = overallScore
+		mythicKeystoneProfile.hasRenderableData = true
+
+		-- Creating fake cache
+		profileCache[guid] = {
+			success = true,
+			overrideScore = true,
+			forceScoreValue = overallScore,
+			mythicKeystoneProfile = mythicKeystoneProfile,
+			guid = guid,
+			name = name,
+			realm = realm,
+			faction = faction,
+			region = region
+		}
+	end
+
     ---@param name string
     ---@param realm string
     ---@param faction number
@@ -2772,10 +2847,14 @@ do
         local guid = region .. " " .. faction .. " " .. realm .. " " .. name
         local cache = profileCache[guid]
         if cache then
-            if not cache.success then
-                return
-            end
-            return cache
+			-- If it's overrideScore, this means that we're overwriting score value
+			if not cache.overrideScore then
+				if not cache.success then
+					return
+				end
+
+				return cache
+			end
         end
         local mythicKeystoneProfile ---@type DataProviderMythicKeystoneProfile
         local raidProfile ---@type DataProviderRaidProfile
@@ -2813,7 +2892,8 @@ do
         if mythicKeystoneProfile and (not mythicKeystoneProfile.hasRenderableData and mythicKeystoneProfile.blocked) and not raidProfile and not pvpProfile then -- TODO: if we don't use blockedPurged functionality we have to then purge when the data is blocked and no rendering is available instead of checking the blockedPurged property
             mythicKeystoneProfile = nil
         end
-        cache = {
+
+        local newCache = {
             success = (mythicKeystoneProfile or raidProfile or pvpProfile) and true or false,
             guid = guid,
             name = name,
@@ -2824,12 +2904,23 @@ do
             raidProfile = raidProfile,
             pvpProfile = pvpProfile
         }
-        profileCache[guid] = cache
-        if not cache.success then
+
+		if cache and cache.overrideScore then
+			if not newCache.mythicKeystoneProfile then
+				newCache.mythicKeystoneProfile = cache.mythicKeystoneProfile
+				newCache.success = true
+			else
+				newCache.mythicKeystoneProfile.mplusCurrent.score = cache.forceScoreValue
+				newCache.mythicKeystoneProfile.currentScore = cache.forceScoreValue
+			end
+		end
+
+        profileCache[guid] = newCache
+        if not newCache.success then
             _G.RaiderIO_MissingCharacters[format("%s-%s-%s", ns.PLAYER_REGION, name, util:GetRealmSlug(realm, true))] = true
             return
         end
-        return cache
+        return newCache
     end
 
     local function OnPlayerEnteringWorld()
@@ -3376,7 +3467,7 @@ do
                         local sortedMilestone = keystoneProfile.sortedMilestones[i]
                         tooltip:AddDoubleLine(sortedMilestone.label, sortedMilestone.text, 1, 1, 1, 1, 1, 1)
                     end
-                    if isExtendedProfile and (hasMod or hasModSticky) then
+                    if isExtendedProfile and (hasMod or hasModSticky) and #keystoneProfile.sortedDungeons > 0 then
                         local hasBestDungeons = false
                         for i = 1, #keystoneProfile.sortedDungeons do
                             local sortedDungeon = keystoneProfile.sortedDungeons[i]
@@ -4647,6 +4738,7 @@ do
     local util = ns:GetModule("Util") ---@type UtilModule
     local render = ns:GetModule("Render") ---@type RenderModule
     local profile = ns:GetModule("Profile") ---@type ProfileModule
+    local provider = ns:GetModule("Provider") ---@type ProviderModule
 
     ---@class LfgResult
     ---@field public activityID number|nil
@@ -4669,6 +4761,15 @@ do
             table.wipe(currentResult)
             return
         end
+
+		local _, _, _, _, _, _, _, _, _, _, _, _, isMythicPlusActivity = C_LFGList.GetActivityInfo(entry.activityID, nil, entry.isWarMode);
+
+		-- Override score of leader
+		if isMythicPlusActivity then
+			local leaderName, leaderRealm = util:GetNameRealm(entry.leaderName)
+			provider:OverrideProfile(leaderName, leaderRealm, ns.PLAYER_FACTION, entry.leaderOverallDungeonScore)
+		end
+
         currentResult.activityID = entry.activityID
         currentResult.leaderName = entry.leaderName
         currentResult.keystoneLevel = util:GetKeystoneLevelFromText(entry.title) or util:GetKeystoneLevelFromText(entry.description) or 0
@@ -4687,10 +4788,17 @@ do
     end
 
     local function ShowApplicantProfile(parent, applicantID, memberIdx)
-        local fullName = C_LFGList.GetApplicantMemberInfo(applicantID, memberIdx)
+        local fullName, _, _, _, _, _, _, _, _, _, _, dungeonScore = C_LFGList.GetApplicantMemberInfo(applicantID, memberIdx)
         if not fullName then
             return false
         end
+
+		if dungeonScore then
+			-- wasn't able to test this
+			local name, realm = util:GetNameRealm(fullName)
+			provider:OverrideProfile(name, realm, ns.PLAYER_FACTION, dungeonScore)
+		end
+
         local ownerSet, ownerExisted, ownerSetSame = util:SetOwnerSafely(GameTooltip, parent, "ANCHOR_NONE", 0, 0)
         if render:ShowProfile(GameTooltip, fullName, ns.PLAYER_FACTION, render.Preset.Unit(render.Flags.MOD_STICKY), currentResult) then
             return true, fullName
@@ -5269,16 +5377,16 @@ do
         for i = 1, numVisibleRuns do
             self.GuildBests[i]:SetUp(currentRuns[i + self.offset])
         end
-    
+
         if self:IsMouseOver() then
             local focus = GetMouseFocus()
             if focus and focus ~= GameTooltip:GetOwner() then
                 util:ExecuteWidgetHandler(focus, "OnEnter")
             end
         end
-    
+
         self:SetHeight(35 + (numVisibleRuns > 0 and numVisibleRuns * self.GuildBests[1]:GetHeight() or 0) + switchRealHeight)
-    
+
         return numRuns, numVisibleRuns
     end
 
