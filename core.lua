@@ -2308,7 +2308,9 @@ do
 		local myName, myRealm = util:GetNameRealm("player")
 
 		if myName == name and myRealm == realm then
-			results.currentScore = C_ChallengeMode.GetOverallDungeonScore()
+			if C_ChallengeMode.GetOverallDungeonScore then
+				results.currentScore = C_ChallengeMode.GetOverallDungeonScore()
+			end
 		end
 	end
 
