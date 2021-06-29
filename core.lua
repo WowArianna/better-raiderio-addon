@@ -1876,6 +1876,63 @@ do
     ---@type DataProvider[]
     local providers = {}
 
+    local function InjectTestBuildData()
+        local REGIONS = ns:GetRegionData()
+        local REALMS = ns:GetRealmData()
+        -- unique client string
+        local clientversion = format("PTR_%s", GetBuildInfo())
+        -- player region fallback
+        ns.PLAYER_REGION = ns.PLAYER_REGION or "us"
+        ns.PLAYER_REGION_ID = ns.PLAYER_REGION_ID or 1
+        -- region fallback for test realms
+        REGIONS[969] = REGIONS[969] or ns.PLAYER_REGION_ID -- 969 = Nobundo-US (PTR)
+        REGIONS[3299] = REGIONS[3299] or ns.PLAYER_REGION_ID -- 3299 = Broxigar-US (PTR) | Lycanthoth-US (PTR)
+        REGIONS[3296] = REGIONS[3296] or ns.PLAYER_REGION_ID -- 3296 = Anasterian-US (PTR) | Benedictus-US (PTR)
+        -- realm fallback
+        ns.PLAYER_REALM_SLUG = ns.PLAYER_REALM_SLUG or format("%s_%s", clientversion, ns.PLAYER_REALM)
+        REALMS[ns.PLAYER_REALM] = REALMS[ns.PLAYER_REALM] or ns.PLAYER_REALM_SLUG
+        -- first available providers matching our faction and region
+        local firstKeystoneProvider = provider:GetProviderByType(ns.PROVIDER_DATA_TYPE.MythicKeystone, ns.PLAYER_FACTION, ns.PLAYER_REGION)
+        local firstRaidProvider = provider:GetProviderByType(ns.PROVIDER_DATA_TYPE.Raid, ns.PLAYER_FACTION, ns.PLAYER_REGION)
+        local firstPvpProvider = provider:GetProviderByType(ns.PROVIDER_DATA_TYPE.PvP, ns.PLAYER_FACTION, ns.PLAYER_REGION)
+        -- create and append proxy providers (fallback to false to avoid nil gaps in the table for the ipairs)
+        local aliasRealm
+        for _, aliasProvider in ipairs({
+            firstKeystoneProvider or false,
+            firstRaidProvider or false,
+            firstPvpProvider or false,
+        }) do
+            if aliasProvider then
+                if not aliasRealm and (aliasProvider.db1 or aliasProvider.db2) then
+                    local names = {}
+                    for name, _ in pairs(aliasProvider.db1 or aliasProvider.db2) do
+                        names[#names + 1] = name
+                    end
+                    table.sort(names, function(a, b) return strcmputf8i(a, b) < 0 end)
+                    aliasRealm = names[1]
+                end
+                if aliasRealm then
+                    aliasProvider.name = format("%s_%s", aliasProvider.name, clientversion)
+                    for _, key in ipairs({
+                        "db1",
+                        "db2",
+                    }) do
+                        local db = aliasProvider[key]
+                        if db then
+                            db[ns.PLAYER_REALM] = db[aliasRealm]
+                        end
+                    end
+                end
+            end
+        end
+        -- print result of this injection
+        if aliasRealm then
+            ns.Print(format("|cffFFFFFF%s|r Test client detected. Because |cffFFFFFF%s|r doesn't exist we are borrowing data from |cffFFFFFF%s|r. Region is set to |cffFFFFFF%s|r.", addonName, ns.PLAYER_REALM, aliasRealm, ns.PLAYER_REGION))
+        else
+            ns.Print(format("|cffFFFFFF%s|r Test client detected. Couldn't borrow test data from anywhere as no providers appear to be loaded for the region |cffFFFFFF%s|r.", addonName, ns.PLAYER_REGION))
+        end
+    end
+
     local function CheckQueuedProviders()
         local desynced
         local outdated
@@ -1917,6 +1974,9 @@ do
     end
 
     local function OnPlayerLogin()
+        if IsTestBuild() and config:Get("debugMode") then
+            InjectTestBuildData()
+        end
         CheckQueuedProviders()
         provider:Enable()
     end
@@ -1929,10 +1989,10 @@ do
         return providers
     end
 
-    function provider:GetProviderByType(providerDataType)
+    function provider:GetProviderByType(dataType, optionalFaction, optionalRegion)
         for i = 1, #providers do
             local provider = providers[i]
-            if provider.data == providerDataType then
+            if provider.data == dataType and (not optionalFaction or provider.faction == optionalFaction) and (not optionalRegion or provider.region == optionalRegion) then
                 return provider
             end
         end
@@ -3423,7 +3483,7 @@ do
                     end
                     if isExtendedProfile then
                         if showRaidEncounters then
-                            local raidProvider = provider:GetProviderByType(ns.PROVIDER_DATA_TYPE.Raid)
+                            local raidProvider = provider:GetProviderByType(ns.PROVIDER_DATA_TYPE.Raid, state.faction, state.region)
                             for i = 1, raidProvider.currentRaid.bossCount do
                                 local progressFound = false
                                 for j = 1, #raidProfile.progress do
@@ -4836,9 +4896,8 @@ do
         local faction = ns.PLAYER_FACTION
         if type(self.GetMemberInfo) == "function" then
             local info = self:GetMemberInfo()
-
             -- function exists but returns null when on "Pending Invites" header
-            if info == nil then
+            if not info then
                 return
             end
 
@@ -5441,7 +5500,7 @@ do
     local profile = ns:GetModule("Profile") ---@type ProfileModule
 
     local function SortByName(a, b)
-        return a.name < b.name
+        return strcmputf8i(a.name, b.name) < 0
     end
 
     local PROVIDERS = provider:GetProviders()
@@ -6639,6 +6698,9 @@ do
         callback:RegisterEvent(UpdateModuleState, "RAIDERIO_SETTINGS_SAVED")
     end
 
+    local LibCombatLogging = LibStub and LibStub:GetLibrary("LibCombatLogging-1.0", true) ---@type LibCombatLogging
+    local LoggingCombat = LibCombatLogging and function(...) return LibCombatLogging.LoggingCombat("Raider.IO", ...) end or _G.LoggingCombat
+
     local autoLogInstanceMapIDs
     local autoLogDifficultyIDs do
         autoLogInstanceMapIDs = {
@@ -6695,8 +6757,10 @@ do
         previouslyEnabledLogging = setLogging
         config:Set("previouslyEnabledLogging", setLogging)
         LoggingCombat(setLogging)
-        local info = ChatTypeInfo["SYSTEM"]
-        DEFAULT_CHAT_FRAME:AddMessage("|cffFFFFFFRaider.IO|r: " .. (setLogging and COMBATLOGENABLED or COMBATLOGDISABLED), info.r, info.g, info.b, info.id)
+        if not LibCombatLogging then
+            local info = ChatTypeInfo.SYSTEM
+            DEFAULT_CHAT_FRAME:AddMessage("|cffFFFFFFRaider.IO|r: " .. (setLogging and COMBATLOGENABLED or COMBATLOGDISABLED), info.r, info.g, info.b, info.id)
+        end
     end
 
     function combatlog:OnEnable()
@@ -6902,8 +6966,8 @@ do
         { region = "us", faction = 2, realm = "tichondrius", name = "proview", success = true },
         { region = "us", faction = 2, realm = "TiChOnDrIuS", name = "pRoViEw", success = true },
         CheckBothTestsAboveForSameProfiles,
-        { region = "eu", faction = 2, realm = "Ревущийфьорд", name = "Кирамета", success = true },
-        { region = "eu", faction = 2, realm = "РЕВУЩИЙФЬОРД", name = "КИРАМЕТА", success = true },
+        { region = "eu", faction = 2, realm = "СвежевательДуш", name = "Хитей", success = true },
+        { region = "eu", faction = 2, realm = "СВЕЖЕВАТЕЛЬДУШ", name = "ХИТЕЙ", success = true },
         CheckBothTestsAboveForSameProfiles,
         { region = "eu", faction = 2, realm = "Ravencrest", name = "Mßx", success = true },
         { region = "eu", faction = 2, realm = "RAVENCREST", name = "MßX", success = true },
