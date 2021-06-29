@@ -4765,7 +4765,7 @@ do
 		local _, _, _, _, _, _, _, _, _, _, _, _, isMythicPlusActivity = C_LFGList.GetActivityInfo(entry.activityID, nil, entry.isWarMode);
 
 		-- Override score of leader
-		if isMythicPlusActivity then
+		if isMythicPlusActivity and entry.leaderOverallDungeonScore then
 			local leaderName, leaderRealm = util:GetNameRealm(entry.leaderName)
 			provider:OverrideProfile(leaderName, leaderRealm, ns.PLAYER_FACTION, entry.leaderOverallDungeonScore)
 		end
@@ -4794,7 +4794,6 @@ do
         end
 
 		if dungeonScore then
-			-- wasn't able to test this
 			local name, realm = util:GetNameRealm(fullName)
 			provider:OverrideProfile(name, realm, ns.PLAYER_FACTION, dungeonScore)
 		end
