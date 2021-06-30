@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-set toc_interface=90005
+set toc_interface=90100
 set toc_author=Vladinator ^(Voidzone-Ravencrest^), Aspyr ^(Aspyrox-Skullcrusher^) and Isak ^(Isak-Sargeras^)
 set toc_addon=RaiderIO
 
