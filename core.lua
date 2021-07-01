@@ -2390,7 +2390,7 @@ do
             results.dungeons[i] = run.level
             results.dungeonUpgrades[i] = run.upgrades
             results.dungeonTimes[i] = run.fraction
-            if run.upgrades > 0 and run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime) then
+            if run.upgrades > 0 and (run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime)) then
                 maxDungeonIndex = i
                 maxDungeonTime = run.fraction
                 maxDungeonLevel = run.level
@@ -2946,7 +2946,7 @@ do
                     mythicKeystoneProfile.dungeons[dungeonIndex] = runLevel
                     mythicKeystoneProfile.dungeonUpgrades[dungeonIndex] = runNumUpgrades
                     mythicKeystoneProfile.dungeonTimes[dungeonIndex] = fractionalTime
-                    if runNumUpgrades > 0 and runScore > maxDungeonScore or (runScore == maxDungeonScore and fractionalTime < maxDungeonTime) then
+                    if runNumUpgrades > 0 and (runScore > maxDungeonScore or (runScore == maxDungeonScore and fractionalTime < maxDungeonTime)) then
                         maxDungeonIndex = dungeonIndex
                         maxDungeonTime = fractionalTime
                         maxDungeonLevel = runLevel
