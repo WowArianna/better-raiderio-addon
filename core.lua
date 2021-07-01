@@ -1979,10 +1979,6 @@ do
         end
         CheckQueuedProviders()
         provider:Enable()
-        local bioSummary = C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player")
-        if bioSummary and bioSummary.currentSeasonScore then
-            provider:OverrideProfile(ns.PLAYER_NAME, ns.PLAYER_REALM, ns.PLAYER_FACTION, bioSummary.currentSeasonScore, bioSummary.runs)
-        end
     end
 
     function provider:OnLoad()
@@ -2394,7 +2390,7 @@ do
             results.dungeons[i] = run.level
             results.dungeonUpgrades[i] = run.upgrades
             results.dungeonTimes[i] = run.fraction
-            if run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime) then
+            if run.upgrades > 0 and run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime) then
                 maxDungeonIndex = i
                 maxDungeonTime = run.fraction
                 maxDungeonLevel = run.level
@@ -2950,7 +2946,7 @@ do
                     mythicKeystoneProfile.dungeons[dungeonIndex] = runLevel
                     mythicKeystoneProfile.dungeonUpgrades[dungeonIndex] = runNumUpgrades
                     mythicKeystoneProfile.dungeonTimes[dungeonIndex] = fractionalTime
-                    if runScore > maxDungeonScore or (runScore == maxDungeonScore and fractionalTime < maxDungeonTime) then
+                    if runNumUpgrades > 0 and runScore > maxDungeonScore or (runScore == maxDungeonScore and fractionalTime < maxDungeonTime) then
                         maxDungeonIndex = dungeonIndex
                         maxDungeonTime = fractionalTime
                         maxDungeonLevel = runLevel
@@ -2967,7 +2963,6 @@ do
                     end
                     if sortedDungeon and sortedDungeon.level <= runLevel then
                         needsDungeonSort = true
-                        print(dungeon.shortName, "/", sortedDungeon.level, runLevel, "/", sortedDungeon.chests, runNumUpgrades, "/", sortedDungeon.fractionalTime, fractionalTime, "") -- DEBUG
                         sortedDungeon.level = runLevel
                         sortedDungeon.chests = runNumUpgrades
                         sortedDungeon.fractionalTime = fractionalTime
@@ -3078,11 +3073,19 @@ do
         return cache
     end
 
+    local function OverridePlayerData()
+        local bioSummary = C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player")
+        if bioSummary and bioSummary.currentSeasonScore then
+            provider:OverrideProfile(ns.PLAYER_NAME, ns.PLAYER_REALM, ns.PLAYER_FACTION, bioSummary.currentSeasonScore, bioSummary.runs)
+        end
+    end
+
     local function OnPlayerEnteringWorld()
         table.wipe(mythicKeystoneProfileCache)
         table.wipe(raidProfileCache)
         table.wipe(pvpProfileCache)
         table.wipe(profileCache)
+        OverridePlayerData()
     end
 
     callback:RegisterEvent(OnPlayerEnteringWorld, "PLAYER_ENTERING_WORLD")
