@@ -1979,6 +1979,7 @@ do
         end
         CheckQueuedProviders()
         provider:Enable()
+        provider:OverrideProfile(ns.PLAYER_NAME, ns.PLAYER_REALM, ns.PLAYER_FACTION, C_ChallengeMode.GetOverallDungeonScore())
     end
 
     function provider:OnLoad()
@@ -2313,16 +2314,19 @@ do
     ---@class DataProviderMythicKeystoneScore
     ---@field public season number @The previous season number, otherwise nil if current season
     ---@field public score number @The score amount
+    ---@field public originalScore number @If set to a number, it means we did override the score but kept a backup of the original here
     ---@field public roles OrderedRolesItem[] @table of roles associated with the score
 
     ---@class DataProviderMythicKeystoneProfile
     ---@field public outdated number|nil @number or nil
     ---@field public hasRenderableData boolean @True if we have any actual data to render in the tooltip without the profile appearing incomplete or empty.
+    ---@field public hasOverrideScore boolean @True if we override the score shown using in-game score data for the profile tooltip.
     ---@field public blocked number|nil @number or nil
     ---@field public blockedPurged boolean|nil @True if the provider has been blocked and purged
     ---@field public softBlocked number|nil @number or nil - Only defined when the profile looked up is the players own profile
     ---@field public isEnhanced boolean|nil @true if client enhanced data (fractionalTime and .dungeonTimes are 1 for timed and 3 for depleted, but when enhanced it's the actual time fraction)
     ---@field public currentScore number
+    ---@field public originalCurrentScore number @If set to a number, it means we did override the score but kept a backup of the original here
     ---@field public currentRoleOrdinalIndex number
     ---@field public previousScore number
     ---@field public previousScoreSeason number
@@ -2362,16 +2366,6 @@ do
 
     local CLIENT_CHARACTERS = ns:GetClientData()
     local DUNGEONS = ns:GetDungeonData()
-
-    ---@param results DataProviderMythicKeystoneProfile
-    local function ApplySelfDataToMythicKeystoneData(results, name, realm)
-        local myName, myRealm = util:GetNameRealm("player")
-        if myName == name and myRealm == realm then
-            if C_ChallengeMode.GetOverallDungeonScore then
-                results.currentScore = C_ChallengeMode.GetOverallDungeonScore()
-            end
-        end
-    end
 
     ---@param results DataProviderMythicKeystoneProfile
     local function ApplyClientDataToMythicKeystoneData(results, name, realm)
@@ -2498,7 +2492,6 @@ do
         results.maxDungeonLevel = results.dungeons[results.maxDungeonIndex]
         results.maxDungeon = DUNGEONS[results.maxDungeonIndex]
         ApplyClientDataToMythicKeystoneData(results, name, realm)
-        ApplySelfDataToMythicKeystoneData(results, name, realm)
         results.sortedMilestones = {}
         if results.keystoneTwentyPlus > 0 then
             results.sortedMilestones[#results.sortedMilestones + 1] = {
@@ -2830,7 +2823,8 @@ do
         return profile
     end
 
-    function CreateEmptyMythicKeystoneData()
+    ---@return DataProviderMythicKeystoneProfile
+    local function CreateEmptyMythicKeystoneData()
         return {
             mplusCurrent = {
                 score = 0,
@@ -2856,43 +2850,50 @@ do
         }
     end
 
-    ---@param name string
-    ---@param realm string
-    ---@param faction number
-    ---@param overallScore number
+    -- override or inject cache entry for tooltip rendering for this character with their BIO score
+    ---@param name string @Character name
+    ---@param realm string @Realm name
+    ---@param faction number @1 = Alliance, 2 = Horde
+    ---@param overallScore number @BIO score directly from the game.
     function provider:OverrideProfile(name, realm, faction, overallScore)
-        if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" then
+        if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" or type(overallScore) ~= "number" then
             return
         end
         local region = ns.PLAYER_REGION
         local guid = region .. " " .. faction .. " " .. realm .. " " .. name
-        local cache = profileCache[guid]
-
-        if cache then
-            if cache.success and cache['mythicKeystoneProfile'] then
-                cache['mythicKeystoneProfile']['currentScore'] = overallScore
-                cache['mythicKeystoneProfile']['mplusCurrent']['score'] = overallScore
-            end
-            return
+        local cache = provider:GetProfile(name, realm, faction, region) ---@type DataProviderCharacterProfile
+        local mythicKeystoneProfile
+        if cache and cache.success and cache.mythicKeystoneProfile then
+            mythicKeystoneProfile = cache.mythicKeystoneProfile
         end
-
-        local mythicKeystoneProfile = CreateEmptyMythicKeystoneData()
-        mythicKeystoneProfile.currentScore = overallScore
-        mythicKeystoneProfile.mplusCurrent.score = overallScore
-        mythicKeystoneProfile.hasRenderableData = true
-
-        -- Creating fake cache
-        profileCache[guid] = {
-            success = true,
-            overrideScore = true,
-            forceScoreValue = overallScore,
-            mythicKeystoneProfile = mythicKeystoneProfile,
-            guid = guid,
-            name = name,
-            realm = realm,
-            faction = faction,
-            region = region
-        }
+        if not mythicKeystoneProfile then
+            mythicKeystoneProfile = CreateEmptyMythicKeystoneData()
+        end
+        if not mythicKeystoneProfile.hasOverrideScore then
+            mythicKeystoneProfile.blocked = nil
+            mythicKeystoneProfile.blockedPurged = nil
+            mythicKeystoneProfile.softBlocked = nil
+            mythicKeystoneProfile.outdated = nil
+            mythicKeystoneProfile.hasRenderableData = true
+            mythicKeystoneProfile.hasOverrideScore = true
+            mythicKeystoneProfile.originalCurrentScore = mythicKeystoneProfile.currentScore
+            mythicKeystoneProfile.currentScore = overallScore
+            mythicKeystoneProfile.mplusCurrent.originalScore = mythicKeystoneProfile.mplusCurrent.score
+            mythicKeystoneProfile.mplusCurrent.score = overallScore
+        end
+        if not cache then
+            cache = {
+                guid = guid,
+                name = name,
+                realm = realm,
+                faction = faction,
+                region = region
+            }
+        end
+        cache.success = true
+        cache.mythicKeystoneProfile = mythicKeystoneProfile
+        profileCache[guid] = cache
+        return cache
     end
 
     ---@param name string
@@ -2908,13 +2909,10 @@ do
         local guid = region .. " " .. faction .. " " .. realm .. " " .. name
         local cache = profileCache[guid]
         if cache then
-            -- If it's overrideScore, this means that we're overwriting score value
-            if not cache.overrideScore then
-                if not cache.success then
-                    return
-                end
-                return cache
+            if not cache.success then
+                return
             end
+            return cache
         end
         local mythicKeystoneProfile ---@type DataProviderMythicKeystoneProfile
         local raidProfile ---@type DataProviderRaidProfile
@@ -2952,8 +2950,7 @@ do
         if mythicKeystoneProfile and (not mythicKeystoneProfile.hasRenderableData and mythicKeystoneProfile.blocked) and not raidProfile and not pvpProfile then -- TODO: if we don't use blockedPurged functionality we have to then purge when the data is blocked and no rendering is available instead of checking the blockedPurged property
             mythicKeystoneProfile = nil
         end
-
-        local newCache = {
+        cache = {
             success = (mythicKeystoneProfile or raidProfile or pvpProfile) and true or false,
             guid = guid,
             name = name,
@@ -2964,23 +2961,12 @@ do
             raidProfile = raidProfile,
             pvpProfile = pvpProfile
         }
-
-        if cache and cache.overrideScore then
-            if not newCache.mythicKeystoneProfile then
-                newCache.mythicKeystoneProfile = cache.mythicKeystoneProfile
-                newCache.success = true
-            else
-                newCache.mythicKeystoneProfile.mplusCurrent.score = cache.forceScoreValue
-                newCache.mythicKeystoneProfile.currentScore = cache.forceScoreValue
-            end
-        end
-
-        profileCache[guid] = newCache
-        if not newCache.success then
+        profileCache[guid] = cache
+        if not cache.success then
             _G.RaiderIO_MissingCharacters[format("%s-%s-%s", ns.PLAYER_REGION, name, util:GetRealmSlug(realm, true))] = true
             return
         end
-        return newCache
+        return cache
     end
 
     local function OnPlayerEnteringWorld()
@@ -2999,13 +2985,12 @@ do
 end
 
 -- loader.lua (internal)
--- dependencies: module, callback, config, util, provider
+-- dependencies: module, callback, config, util
 do
 
     local callback = ns:GetModule("Callback") ---@type CallbackModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
-    local provider = ns:GetModule("Provider") ---@type ProviderModule
 
     local loadingAgainSoon
     local LoadModules
@@ -4821,14 +4806,11 @@ do
             table.wipe(currentResult)
             return
         end
-
-        -- Override score of leader
         local _, _, _, _, _, _, _, _, _, _, _, _, isMythicPlusActivity = C_LFGList.GetActivityInfo(entry.activityID, nil, entry.isWarMode)
         if isMythicPlusActivity and entry.leaderOverallDungeonScore then
             local leaderName, leaderRealm = util:GetNameRealm(entry.leaderName)
             provider:OverrideProfile(leaderName, leaderRealm, ns.PLAYER_FACTION, entry.leaderOverallDungeonScore)
         end
-
         currentResult.activityID = entry.activityID
         currentResult.leaderName = entry.leaderName
         currentResult.keystoneLevel = util:GetKeystoneLevelFromText(entry.title) or util:GetKeystoneLevelFromText(entry.description) or 0
@@ -4851,12 +4833,10 @@ do
         if not fullName then
             return false
         end
-
         if dungeonScore then
             local name, realm = util:GetNameRealm(fullName)
             provider:OverrideProfile(name, realm, ns.PLAYER_FACTION, dungeonScore)
         end
-
         local ownerSet, ownerExisted, ownerSetSame = util:SetOwnerSafely(GameTooltip, parent, "ANCHOR_NONE", 0, 0)
         if render:ShowProfile(GameTooltip, fullName, ns.PLAYER_FACTION, render.Preset.Unit(render.Flags.MOD_STICKY), currentResult) then
             return true, fullName
