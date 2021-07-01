@@ -3,7 +3,7 @@ const csv = require('fast-csv');
 
 (async () => {
 
-    const build = '9.0.2.36671', expansion = 8; // 9.X (Shadowlands)
+    const build = '9.1.0.39229', expansion = 8; // 9.X (Shadowlands)
     // const build = '8.3.7.35284', expansion = 7; // 8.X (Battle for Azeroth)
 
     if (!/^\d+\.\d+\.\d+\.\d+$/.test(build) || typeof expansion !== 'number') return console.error('Missing valid build and/or expansion id.');
@@ -22,7 +22,7 @@ const csv = require('fast-csv');
             fields: {
                 'MapID': 'instance_map_id', // reference
                 'ID': 'keystone_instance',
-                'Name_lang': 'name',
+                'Name_lang': 'name'
             }
         },
         {
@@ -95,9 +95,15 @@ const csv = require('fast-csv');
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const request = await fetch(`https://wow.tools/dbc/api/export/?name=${file.name}&build=${build}`);
+        const request = await fetch(`https://wow.tools/dbc/api/export/?name=${file.name}&build=${build}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
         const text = await request.text();
         file.rows = await parseCsv(text);
+        if (!file.rows)
+            continue;
         for (let j = 0; j < file.rows.length; j++) {
             const row = file.rows[j];
             const temp = {};
@@ -190,6 +196,24 @@ const csv = require('fast-csv');
         }
     }
 
+    const timerFile = files.filter(file => file.name === 'mapchallengemode')[0];
+    const getTimerInfoForDungeon = dungeon => {
+        if (!timerFile || !timerFile.rows)
+            return;
+        const dungeonRow = timerFile.rows.filter(row => row['ID'] - dungeon.keystone_instance === 0)[0];
+        if (!dungeonRow)
+            return;
+        const goldTimer = parseInt(dungeonRow['CriteriaCount[2]']) || 0;
+        const silverTimer = parseInt(dungeonRow['CriteriaCount[1]']) || 0;
+        const bronzeTimer = parseInt(dungeonRow['CriteriaCount[0]']) || 0;
+        return { goldTimer, silverTimer, bronzeTimer };
+    };
+
+    dungeons.forEach(dungeon => {
+        const timerInfo = getTimerInfoForDungeon(dungeon);
+        dungeon.timers = timerInfo ? [ timerInfo.goldTimer, timerInfo.silverTimer, timerInfo.bronzeTimer ] : [];
+    });
+
     dungeons.sort((a, b) => a.id - b.id);
 
     const sortedKeys = [
@@ -197,6 +221,7 @@ const csv = require('fast-csv');
         'keystone_instance',
         'instance_map_id',
         'lfd_activity_ids',
+        'timers',
         'name',
         'shortName'
     ];

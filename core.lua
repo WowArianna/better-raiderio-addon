@@ -2926,20 +2926,36 @@ do
                     dungeon = nil
                 end
                 local runLevel = run.bestRunLevel
-                if dungeonIndex and mythicKeystoneProfile.dungeons[dungeonIndex] < runLevel then -- requires the game data to have a higher dungeon level than our database
-                    local runNumChests = run.finishedSuccess and 1 or 0
-                    local runTimer = run.bestRunDurationMS
+                if dungeonIndex and mythicKeystoneProfile.dungeons[dungeonIndex] <= runLevel then
+                    local _, _, dungeonTimeLimit = C_ChallengeMode.GetMapUIInfo(run.challengeModeID)
+                    local goldTimeLimit, silverTimeLimit, bronzeTimeLimit = -1, -1, dungeonTimeLimit
+                    if dungeon.timers then
+                        goldTimeLimit, silverTimeLimit, bronzeTimeLimit = dungeon.timers[1], dungeon.timers[2], dungeonTimeLimit or dungeon.timers[3] -- TODO: always prefer the game data time limit for bronze or the addons time limit?
+                    end
+                    local runSeconds = run.bestRunDurationMS / 1000
+                    local runNumUpgrades = 0
+                    if run.finishedSuccess then
+                        if runSeconds <= goldTimeLimit then
+                            runNumUpgrades = 3
+                        elseif runSeconds <= silverTimeLimit then
+                            runNumUpgrades = 2
+                        elseif runSeconds <= bronzeTimeLimit then
+                            runNumUpgrades = 1
+                        end
+                    end
+                    local runTimerAsFraction = runSeconds / (dungeonTimeLimit and dungeonTimeLimit > 0 and dungeonTimeLimit or 1) -- convert game timer to a fraction (1 or below is timed, above is depleted)
+                    local fractionalTime = run.finishedSuccess and (mythicKeystoneProfile.isEnhanced and runTimerAsFraction or (3 - runNumUpgrades)) or 3 -- the data here depends if we are using client enhanced data or not
                     local runScore = run.mapScore
                     needsMaxDungeonUpgrade = true
                     mythicKeystoneProfile.dungeons[dungeonIndex] = runLevel
-                    mythicKeystoneProfile.dungeonUpgrades[dungeonIndex] = runNumChests
-                    mythicKeystoneProfile.dungeonTimes[dungeonIndex] = runTimer
-                    if runScore > maxDungeonScore or (runScore == maxDungeonScore and runTimer < maxDungeonTime) then
+                    mythicKeystoneProfile.dungeonUpgrades[dungeonIndex] = runNumUpgrades
+                    mythicKeystoneProfile.dungeonTimes[dungeonIndex] = fractionalTime
+                    if runScore > maxDungeonScore or (runScore == maxDungeonScore and fractionalTime < maxDungeonTime) then
                         maxDungeonIndex = dungeonIndex
-                        maxDungeonTime = runTimer
+                        maxDungeonTime = fractionalTime
                         maxDungeonLevel = runLevel
                         maxDungeonScore = runScore
-                        maxDungeonUpgrades = runNumChests
+                        maxDungeonUpgrades = runNumUpgrades
                     end
                     local sortedDungeon
                     for j = 1, #mythicKeystoneProfile.sortedDungeons do
@@ -2949,13 +2965,12 @@ do
                         end
                         sortedDungeon = nil
                     end
-                    if sortedDungeon then
-                        if sortedDungeon.level < runLevel then -- requires the game data to have a higher dungeon level than our database
-                            needsDungeonSort = true
-                            sortedDungeon.level = runLevel
-                            sortedDungeon.chests = runNumChests
-                            sortedDungeon.fractionalTime = runTimer
-                        end
+                    if sortedDungeon and sortedDungeon.level <= runLevel then
+                        needsDungeonSort = true
+                        print(dungeon.shortName, "/", sortedDungeon.level, runLevel, "/", sortedDungeon.chests, runNumUpgrades, "/", sortedDungeon.fractionalTime, fractionalTime, "") -- DEBUG
+                        sortedDungeon.level = runLevel
+                        sortedDungeon.chests = runNumUpgrades
+                        sortedDungeon.fractionalTime = fractionalTime
                     end
                 end
             end
