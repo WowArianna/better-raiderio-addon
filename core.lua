@@ -2866,6 +2866,15 @@ do
         return results
     end
 
+	--- dirty fix to make the score back as it was based on a interpolated polynom degree 3
+    function makeTheScoreExpo(overallScore)
+        if type(overallScore) ~= "number" or overallScore < 1 then
+            return 0
+        end
+        local scoreExpo = 4.379*(10^-7)*(overallScore^3)-0.001542*(overallScore^2)+2.4 *overallScore-859.2
+        return tonumber(string.format("%." .. 2 .. "f", scoreExpo))
+    end
+	
     ---@class BlizzardKeystoneRun
     ---@field public bestRunDurationMS number @Timer in milliseconds
     ---@field public bestRunLevel number @Keystone level
@@ -2880,6 +2889,7 @@ do
     ---@param overallScore number @BIO score directly from the game.
     ---@param keystoneRuns BlizzardKeystoneRun[] @BIO runs directly from the game.
     function provider:OverrideProfile(name, realm, faction, overallScore, keystoneRuns)
+        overallScore = makeTheScoreExpo(overallScore)
         if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" or type(overallScore) ~= "number" or overallScore < 1 then
             return
         end
