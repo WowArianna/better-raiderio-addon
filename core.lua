@@ -2313,16 +2313,20 @@ do
     ---@class DataProviderMythicKeystoneScore
     ---@field public season number @The previous season number, otherwise nil if current season
     ---@field public score number @The score amount
+    ---@field public originalScore number @If set to a number, it means we did override the score but kept a backup of the original here
     ---@field public roles OrderedRolesItem[] @table of roles associated with the score
 
     ---@class DataProviderMythicKeystoneProfile
     ---@field public outdated number|nil @number or nil
     ---@field public hasRenderableData boolean @True if we have any actual data to render in the tooltip without the profile appearing incomplete or empty.
+    ---@field public hasOverrideScore boolean @True if we override the score shown using in-game score data for the profile tooltip.
+    ---@field public hasOverrideDungeonRuns boolean @True if we override the dungeon runs shown using in-game data for the profile tooltip.
     ---@field public blocked number|nil @number or nil
     ---@field public blockedPurged boolean|nil @True if the provider has been blocked and purged
     ---@field public softBlocked number|nil @number or nil - Only defined when the profile looked up is the players own profile
     ---@field public isEnhanced boolean|nil @true if client enhanced data (fractionalTime and .dungeonTimes are 1 for timed and 3 for depleted, but when enhanced it's the actual time fraction)
     ---@field public currentScore number
+    ---@field public originalCurrentScore number @If set to a number, it means we did override the score but kept a backup of the original here
     ---@field public currentRoleOrdinalIndex number
     ---@field public previousScore number
     ---@field public previousScoreSeason number
@@ -2364,16 +2368,6 @@ do
     local DUNGEONS = ns:GetDungeonData()
 
     ---@param results DataProviderMythicKeystoneProfile
-    local function ApplySelfDataToMythicKeystoneData(results, name, realm)
-        local myName, myRealm = util:GetNameRealm("player")
-        if myName == name and myRealm == realm then
-            if C_ChallengeMode.GetOverallDungeonScore then
-                results.currentScore = C_ChallengeMode.GetOverallDungeonScore()
-            end
-        end
-    end
-
-    ---@param results DataProviderMythicKeystoneProfile
     local function ApplyClientDataToMythicKeystoneData(results, name, realm)
         if not CLIENT_CHARACTERS or not config:Get("enableClientEnhancements") then
             return
@@ -2396,7 +2390,7 @@ do
             results.dungeons[i] = run.level
             results.dungeonUpgrades[i] = run.upgrades
             results.dungeonTimes[i] = run.fraction
-            if run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime) then
+            if run.upgrades > 0 and (run.score > maxDungeonScore or (run.score == maxDungeonScore and run.fraction < maxDungeonTime)) then
                 maxDungeonIndex = i
                 maxDungeonTime = run.fraction
                 maxDungeonLevel = run.level
@@ -2498,7 +2492,6 @@ do
         results.maxDungeonLevel = results.dungeons[results.maxDungeonIndex]
         results.maxDungeon = DUNGEONS[results.maxDungeonIndex]
         ApplyClientDataToMythicKeystoneData(results, name, realm)
-        ApplySelfDataToMythicKeystoneData(results, name, realm)
         results.sortedMilestones = {}
         if results.keystoneTwentyPlus > 0 then
             results.sortedMilestones[#results.sortedMilestones + 1] = {
@@ -2830,8 +2823,9 @@ do
         return profile
     end
 
-    function CreateEmptyMythicKeystoneData()
-        return {
+    local function CreateEmptyMythicKeystoneData()
+        ---@type DataProviderMythicKeystoneProfile
+        local results = {
             mplusCurrent = {
                 score = 0,
                 roles = {}
@@ -2848,51 +2842,162 @@ do
                 score = 0,
                 roles = {}
             },
-            sortedDungeons = {},
             dungeons = {},
+            dungeonUpgrades = {},
+            dungeonTimes = {},
             maxDungeon = 0,
             maxDungeonLevel = 0,
+            maxDungeonUpgrades = 0,
+            sortedDungeons = {},
             sortedMilestones = {}
         }
+        for i = 1, #DUNGEONS do
+            results.dungeons[i] = 0
+            results.dungeonUpgrades[i] = 0
+            results.dungeonTimes[i] = 0
+            results.sortedDungeons[i] = {
+                dungeon = DUNGEONS[i],
+                level = 0,
+                chests = 0,
+                fractionalTime = 999
+            }
+        end
+        table.sort(results.sortedDungeons, SortDungeons)
+        return results
     end
 
-    ---@param name string
-    ---@param realm string
-    ---@param faction number
-    ---@param overallScore number
-    function provider:OverrideProfile(name, realm, faction, overallScore)
-        if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" then
+    ---@class BlizzardKeystoneRun
+    ---@field public bestRunDurationMS number @Timer in milliseconds
+    ---@field public bestRunLevel number @Keystone level
+    ---@field public challengeModeID number @Keystone instance ID
+    ---@field public finishedSuccess boolean @If the run was timed or not
+    ---@field public mapScore number @The score worth for the run
+
+    -- override or inject cache entry for tooltip rendering for this character with their BIO score and keystune run data
+    ---@param name string @Character name
+    ---@param realm string @Realm name
+    ---@param faction number @1 = Alliance, 2 = Horde
+    ---@param overallScore number @BIO score directly from the game.
+    ---@param keystoneRuns BlizzardKeystoneRun[] @BIO runs directly from the game.
+    function provider:OverrideProfile(name, realm, faction, overallScore, keystoneRuns)
+        if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" or type(overallScore) ~= "number" or overallScore < 1 then
             return
         end
         local region = ns.PLAYER_REGION
         local guid = region .. " " .. faction .. " " .. realm .. " " .. name
-        local cache = profileCache[guid]
-
-        if cache then
-            if cache.success and cache['mythicKeystoneProfile'] then
-                cache['mythicKeystoneProfile']['currentScore'] = overallScore
-                cache['mythicKeystoneProfile']['mplusCurrent']['score'] = overallScore
-            end
-            return
+        local cache = provider:GetProfile(name, realm, faction, region) ---@type DataProviderCharacterProfile
+        local mythicKeystoneProfile
+        if cache and cache.success and cache.mythicKeystoneProfile then
+            mythicKeystoneProfile = cache.mythicKeystoneProfile
         end
-
-        local mythicKeystoneProfile = CreateEmptyMythicKeystoneData()
-        mythicKeystoneProfile.currentScore = overallScore
-        mythicKeystoneProfile.mplusCurrent.score = overallScore
-        mythicKeystoneProfile.hasRenderableData = true
-
-        -- Creating fake cache
-        profileCache[guid] = {
-            success = true,
-            overrideScore = true,
-            forceScoreValue = overallScore,
-            mythicKeystoneProfile = mythicKeystoneProfile,
-            guid = guid,
-            name = name,
-            realm = realm,
-            faction = faction,
-            region = region
-        }
+        if not mythicKeystoneProfile then
+            mythicKeystoneProfile = CreateEmptyMythicKeystoneData()
+        end
+        if not mythicKeystoneProfile.hasOverrideScore then
+            mythicKeystoneProfile.hasOverrideScore = true
+            mythicKeystoneProfile.originalCurrentScore = mythicKeystoneProfile.currentScore
+            mythicKeystoneProfile.currentScore = overallScore
+            mythicKeystoneProfile.mplusCurrent.originalScore = mythicKeystoneProfile.mplusCurrent.score
+            mythicKeystoneProfile.mplusCurrent.score = overallScore
+        end
+        if not mythicKeystoneProfile.hasOverrideDungeonRuns and type(keystoneRuns) == "table" then
+            mythicKeystoneProfile.hasOverrideDungeonRuns = true
+            local maxDungeonIndex = 0
+            local maxDungeonTime = 999
+            local maxDungeonLevel = 0
+            local maxDungeonScore = 0
+            local maxDungeonUpgrades = 0
+            local needsMaxDungeonUpgrade
+            local needsDungeonSort
+            for i = 1, #keystoneRuns do
+                local run = keystoneRuns[i]
+                local dungeonIndex
+                local dungeon
+                for j = 1, #DUNGEONS do
+                    dungeon = DUNGEONS[j]
+                    if dungeon.keystone_instance == run.challengeModeID then
+                        dungeonIndex = j
+                        break
+                    end
+                    dungeon = nil
+                end
+                local runLevel = run.bestRunLevel
+                if dungeonIndex and mythicKeystoneProfile.dungeons[dungeonIndex] <= runLevel then
+                    local _, _, dungeonTimeLimit = C_ChallengeMode.GetMapUIInfo(run.challengeModeID)
+                    local goldTimeLimit, silverTimeLimit, bronzeTimeLimit = -1, -1, dungeonTimeLimit
+                    if dungeon.timers then
+                        goldTimeLimit, silverTimeLimit, bronzeTimeLimit = dungeon.timers[1], dungeon.timers[2], dungeonTimeLimit or dungeon.timers[3] -- TODO: always prefer the game data time limit for bronze or the addons time limit?
+                    end
+                    local runSeconds = run.bestRunDurationMS / 1000
+                    local runNumUpgrades = 0
+                    if run.finishedSuccess then
+                        if runSeconds <= goldTimeLimit then
+                            runNumUpgrades = 3
+                        elseif runSeconds <= silverTimeLimit then
+                            runNumUpgrades = 2
+                        elseif runSeconds <= bronzeTimeLimit then
+                            runNumUpgrades = 1
+                        end
+                    end
+                    local runTimerAsFraction = runSeconds / (dungeonTimeLimit and dungeonTimeLimit > 0 and dungeonTimeLimit or 1) -- convert game timer to a fraction (1 or below is timed, above is depleted)
+                    local fractionalTime = run.finishedSuccess and (mythicKeystoneProfile.isEnhanced and runTimerAsFraction or (3 - runNumUpgrades)) or 3 -- the data here depends if we are using client enhanced data or not
+                    local runScore = run.mapScore
+                    needsMaxDungeonUpgrade = true
+                    mythicKeystoneProfile.dungeons[dungeonIndex] = runLevel
+                    mythicKeystoneProfile.dungeonUpgrades[dungeonIndex] = runNumUpgrades
+                    mythicKeystoneProfile.dungeonTimes[dungeonIndex] = fractionalTime
+                    if runNumUpgrades > 0 and (runScore > maxDungeonScore or (runScore == maxDungeonScore and fractionalTime < maxDungeonTime)) then
+                        maxDungeonIndex = dungeonIndex
+                        maxDungeonTime = fractionalTime
+                        maxDungeonLevel = runLevel
+                        maxDungeonScore = runScore
+                        maxDungeonUpgrades = runNumUpgrades
+                    end
+                    local sortedDungeon
+                    for j = 1, #mythicKeystoneProfile.sortedDungeons do
+                        sortedDungeon = mythicKeystoneProfile.sortedDungeons[j]
+                        if sortedDungeon.dungeon == dungeon then
+                            break
+                        end
+                        sortedDungeon = nil
+                    end
+                    if sortedDungeon and sortedDungeon.level <= runLevel then
+                        needsDungeonSort = true
+                        sortedDungeon.level = runLevel
+                        sortedDungeon.chests = runNumUpgrades
+                        sortedDungeon.fractionalTime = fractionalTime
+                    end
+                end
+            end
+            if needsMaxDungeonUpgrade then
+                mythicKeystoneProfile.maxDungeon = DUNGEONS[maxDungeonIndex]
+                mythicKeystoneProfile.maxDungeonLevel = maxDungeonLevel
+                mythicKeystoneProfile.maxDungeonUpgrades = maxDungeonUpgrades
+            end
+            if needsDungeonSort then
+                table.sort(mythicKeystoneProfile.sortedDungeons, SortDungeons)
+            end
+        end
+        if mythicKeystoneProfile.hasOverrideScore or mythicKeystoneProfile.hasOverrideDungeonRuns then
+            mythicKeystoneProfile.blocked = nil
+            mythicKeystoneProfile.blockedPurged = nil
+            mythicKeystoneProfile.softBlocked = nil
+            mythicKeystoneProfile.outdated = nil
+            mythicKeystoneProfile.hasRenderableData = true
+        end
+        if not cache then
+            cache = {
+                guid = guid,
+                name = name,
+                realm = realm,
+                faction = faction,
+                region = region
+            }
+        end
+        cache.success = true
+        cache.mythicKeystoneProfile = mythicKeystoneProfile
+        profileCache[guid] = cache
+        return cache
     end
 
     ---@param name string
@@ -2908,13 +3013,10 @@ do
         local guid = region .. " " .. faction .. " " .. realm .. " " .. name
         local cache = profileCache[guid]
         if cache then
-            -- If it's overrideScore, this means that we're overwriting score value
-            if not cache.overrideScore then
-                if not cache.success then
-                    return
-                end
-                return cache
+            if not cache.success then
+                return
             end
+            return cache
         end
         local mythicKeystoneProfile ---@type DataProviderMythicKeystoneProfile
         local raidProfile ---@type DataProviderRaidProfile
@@ -2952,8 +3054,7 @@ do
         if mythicKeystoneProfile and (not mythicKeystoneProfile.hasRenderableData and mythicKeystoneProfile.blocked) and not raidProfile and not pvpProfile then -- TODO: if we don't use blockedPurged functionality we have to then purge when the data is blocked and no rendering is available instead of checking the blockedPurged property
             mythicKeystoneProfile = nil
         end
-
-        local newCache = {
+        cache = {
             success = (mythicKeystoneProfile or raidProfile or pvpProfile) and true or false,
             guid = guid,
             name = name,
@@ -2964,23 +3065,19 @@ do
             raidProfile = raidProfile,
             pvpProfile = pvpProfile
         }
-
-        if cache and cache.overrideScore then
-            if not newCache.mythicKeystoneProfile then
-                newCache.mythicKeystoneProfile = cache.mythicKeystoneProfile
-                newCache.success = true
-            else
-                newCache.mythicKeystoneProfile.mplusCurrent.score = cache.forceScoreValue
-                newCache.mythicKeystoneProfile.currentScore = cache.forceScoreValue
-            end
-        end
-
-        profileCache[guid] = newCache
-        if not newCache.success then
+        profileCache[guid] = cache
+        if not cache.success then
             _G.RaiderIO_MissingCharacters[format("%s-%s-%s", ns.PLAYER_REGION, name, util:GetRealmSlug(realm, true))] = true
             return
         end
-        return newCache
+        return cache
+    end
+
+    local function OverridePlayerData()
+        local bioSummary = C_PlayerInfo.GetPlayerMythicPlusRatingSummary("player")
+        if bioSummary and bioSummary.currentSeasonScore then
+            provider:OverrideProfile(ns.PLAYER_NAME, ns.PLAYER_REALM, ns.PLAYER_FACTION, bioSummary.currentSeasonScore, bioSummary.runs)
+        end
     end
 
     local function OnPlayerEnteringWorld()
@@ -2988,6 +3085,7 @@ do
         table.wipe(raidProfileCache)
         table.wipe(pvpProfileCache)
         table.wipe(profileCache)
+        OverridePlayerData()
     end
 
     callback:RegisterEvent(OnPlayerEnteringWorld, "PLAYER_ENTERING_WORLD")
@@ -2999,13 +3097,12 @@ do
 end
 
 -- loader.lua (internal)
--- dependencies: module, callback, config, util, provider
+-- dependencies: module, callback, config, util
 do
 
     local callback = ns:GetModule("Callback") ---@type CallbackModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
-    local provider = ns:GetModule("Provider") ---@type ProviderModule
 
     local loadingAgainSoon
     local LoadModules
@@ -3903,13 +4000,14 @@ do
 end
 
 -- gametooltip.lua
--- dependencies: module, config, util, render
+-- dependencies: module, config, util, provider, render
 do
 
     ---@class GameTooltipModule : Module
     local tooltip = ns:NewModule("GameTooltip") ---@type GameTooltipModule
     local config = ns:GetModule("Config") ---@type ConfigModule
     local util = ns:GetModule("Util") ---@type UtilModule
+    local provider = ns:GetModule("Provider") ---@type ProviderModule
     local render = ns:GetModule("Render") ---@type RenderModule
 
     local function OnTooltipSetUnit(self)
@@ -3924,6 +4022,12 @@ do
             return
         end
         if util:IsUnitMaxLevel(unit) then
+            local bioSummary = C_PlayerInfo.GetPlayerMythicPlusRatingSummary(unit)
+            if bioSummary and bioSummary.currentSeasonScore then
+                local name, realm = util:GetNameRealm(unit)
+                local faction = util:GetFaction(unit)
+                provider:OverrideProfile(name, realm, faction, bioSummary.currentSeasonScore, bioSummary.runs)
+            end
             render:ShowProfile(self, unit)
         end
     end
@@ -4821,14 +4925,11 @@ do
             table.wipe(currentResult)
             return
         end
-
-        -- Override score of leader
         local _, _, _, _, _, _, _, _, _, _, _, _, isMythicPlusActivity = C_LFGList.GetActivityInfo(entry.activityID, nil, entry.isWarMode)
         if isMythicPlusActivity and entry.leaderOverallDungeonScore then
             local leaderName, leaderRealm = util:GetNameRealm(entry.leaderName)
             provider:OverrideProfile(leaderName, leaderRealm, ns.PLAYER_FACTION, entry.leaderOverallDungeonScore)
         end
-
         currentResult.activityID = entry.activityID
         currentResult.leaderName = entry.leaderName
         currentResult.keystoneLevel = util:GetKeystoneLevelFromText(entry.title) or util:GetKeystoneLevelFromText(entry.description) or 0
@@ -4851,12 +4952,10 @@ do
         if not fullName then
             return false
         end
-
         if dungeonScore then
             local name, realm = util:GetNameRealm(fullName)
             provider:OverrideProfile(name, realm, ns.PLAYER_FACTION, dungeonScore)
         end
-
         local ownerSet, ownerExisted, ownerSetSame = util:SetOwnerSafely(GameTooltip, parent, "ANCHOR_NONE", 0, 0)
         if render:ShowProfile(GameTooltip, fullName, ns.PLAYER_FACTION, render.Preset.Unit(render.Flags.MOD_STICKY), currentResult) then
             return true, fullName
