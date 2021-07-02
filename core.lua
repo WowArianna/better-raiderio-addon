@@ -680,6 +680,7 @@ do
         lockProfile = false,
         showRoleIcons = true,
         profilePoint = { point = nil, x = 0, y = 0 },
+        overrideScores = true, -- NEW in 9.1
         debugMode = false
     }
 
@@ -1981,6 +1982,8 @@ do
         provider:Enable()
     end
 
+    local OVERRIDE_SCORES
+
     function provider:OnLoad()
         callback:RegisterEventOnce(OnPlayerLogin, "RAIDERIO_PLAYER_LOGIN")
     end
@@ -2880,7 +2883,7 @@ do
     ---@param overallScore number @BIO score directly from the game.
     ---@param keystoneRuns BlizzardKeystoneRun[] @BIO runs directly from the game.
     function provider:OverrideProfile(name, realm, faction, overallScore, keystoneRuns)
-        if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" or type(overallScore) ~= "number" or overallScore < 1 then
+        if type(name) ~= "string" or type(realm) ~= "string" or type(faction) ~= "number" or (type(overallScore) ~= "number" and type(keystoneRuns) ~= "table") then
             return
         end
         local region = ns.PLAYER_REGION
@@ -2888,19 +2891,22 @@ do
         local cache = provider:GetProfile(name, realm, faction, region) ---@type DataProviderCharacterProfile
         local mythicKeystoneProfile
         if cache and cache.success and cache.mythicKeystoneProfile then
+            if not OVERRIDE_SCORES then
+                return
+            end
             mythicKeystoneProfile = cache.mythicKeystoneProfile
         end
         if not mythicKeystoneProfile then
             mythicKeystoneProfile = CreateEmptyMythicKeystoneData()
         end
-        if not mythicKeystoneProfile.hasOverrideScore then
+        if not mythicKeystoneProfile.hasOverrideScore and type(overallScore) == "number" and overallScore > 0 then
             mythicKeystoneProfile.hasOverrideScore = true
             mythicKeystoneProfile.originalCurrentScore = mythicKeystoneProfile.currentScore
             mythicKeystoneProfile.currentScore = overallScore
             mythicKeystoneProfile.mplusCurrent.originalScore = mythicKeystoneProfile.mplusCurrent.score
             mythicKeystoneProfile.mplusCurrent.score = overallScore
         end
-        if not mythicKeystoneProfile.hasOverrideDungeonRuns and type(keystoneRuns) == "table" then
+        if not mythicKeystoneProfile.hasOverrideDungeonRuns and type(keystoneRuns) == "table" and keystoneRuns[1] then
             mythicKeystoneProfile.hasOverrideDungeonRuns = true
             local maxDungeonIndex = 0
             local maxDungeonTime = 999
@@ -2999,6 +3005,21 @@ do
         profileCache[guid] = cache
         return cache
     end
+
+    local function OnSettingsChanged()
+        if not config:IsEnabled() then
+            return
+        end
+        local prevOverrideScores = OVERRIDE_SCORES
+        OVERRIDE_SCORES = config:Get("overrideScores")
+        if prevOverrideScores == OVERRIDE_SCORES then
+            return
+        end
+        provider:WipeCache()
+    end
+
+    callback:RegisterEvent(OnSettingsChanged, "RAIDERIO_CONFIG_READY")
+    callback:RegisterEvent(OnSettingsChanged, "RAIDERIO_SETTINGS_SAVED")
 
     ---@param name string
     ---@param realm string
@@ -6629,6 +6650,7 @@ do
             configOptions:CreateOptionToggle(L.SHOW_SCORE_IN_COMBAT, L.SHOW_SCORE_IN_COMBAT_DESC, "showScoreInCombat")
             configOptions:CreateOptionToggle(L.SHOW_SCORE_WITH_MODIFIER, L.SHOW_SCORE_WITH_MODIFIER_DESC, "showScoreModifier")
             configOptions:CreateOptionToggle(L.USE_ENGLISH_ABBREVIATION, L.USE_ENGLISH_ABBREVIATION_DESC, "useEnglishAbbreviations")
+            configOptions:CreateOptionToggle(L.ENABLE_BLIZZARD_SCORE_OVERRIDE, L.ENABLE_BLIZZARD_SCORE_OVERRIDE_DESC, "overrideScores")
 
             configOptions:CreatePadding()
             configOptions:CreateHeadline(L.CONFIG_WHERE_TO_SHOW_TOOLTIPS)
