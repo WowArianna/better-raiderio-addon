@@ -1,3 +1,6 @@
+Aim of this fork is to restore the exponential scoring system from data provided from the Rankings site, Raider.IO: https://raider.io.
+
+
 # Raider.IO Mythic Plus & Raiding
 
 ## Overview
